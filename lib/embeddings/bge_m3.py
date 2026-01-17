@@ -1,5 +1,5 @@
 """
-BGE-M3 embedding model for Polymath v3.
+BGE-M3 embedding model for Polymath v4.
 
 BGE-M3 produces 1024-dimensional embeddings with:
 - Dense retrieval (semantic similarity)
@@ -10,7 +10,7 @@ We use dense embeddings for pgvector storage.
 """
 
 import logging
-from typing import Optional, Union
+from typing import Optional, Union, List
 from functools import lru_cache
 
 import numpy as np
@@ -19,18 +19,22 @@ from lib.config import config
 
 logger = logging.getLogger(__name__)
 
-# Global embedder instance
-_embedder = None
 
-
-class Embedder:
+class BGEEmbedder:
     """
     BGE-M3 embedding model wrapper.
 
     Usage:
-        embedder = Embedder()
+        embedder = BGEEmbedder()
         embeddings = embedder.encode(["text1", "text2"])
         # embeddings.shape = (2, 1024)
+
+        # Single text convenience method
+        embedding = embedder.embed_single("text")
+        # embedding.shape = (1024,)
+
+        # Batch encoding (alias for encode)
+        embeddings = embedder.embed_batch(["text1", "text2"])
     """
 
     def __init__(
@@ -92,7 +96,7 @@ class Embedder:
 
     def encode(
         self,
-        texts: Union[str, list[str]],
+        texts: Union[str, List[str]],
         batch_size: int = 32,
         max_length: int = 8192,
         normalize: bool = True,
@@ -143,6 +147,39 @@ class Embedder:
 
         return embeddings
 
+    def embed_single(self, text: str, **kwargs) -> np.ndarray:
+        """
+        Encode a single text and return 1D embedding.
+
+        Args:
+            text: Text to encode
+            **kwargs: Additional arguments passed to encode()
+
+        Returns:
+            1D numpy array of shape (embedding_dim,)
+        """
+        embedding = self.encode([text], **kwargs)
+        return embedding[0]
+
+    def embed_batch(
+        self,
+        texts: List[str],
+        batch_size: int = 32,
+        **kwargs
+    ) -> np.ndarray:
+        """
+        Encode multiple texts (alias for encode with list).
+
+        Args:
+            texts: List of texts to encode
+            batch_size: Batch size for encoding
+            **kwargs: Additional arguments passed to encode()
+
+        Returns:
+            numpy array of shape (n_texts, embedding_dim)
+        """
+        return self.encode(texts, batch_size=batch_size, **kwargs)
+
     def encode_query(
         self,
         query: str,
@@ -190,11 +227,16 @@ class Embedder:
         return config.EMBEDDING_DIM
 
 
+# Backward compatibility alias
+Embedder = BGEEmbedder
+BGEM3Embedder = BGEEmbedder
+
+
 @lru_cache(maxsize=1)
 def get_embedder(
     model_name: str = None,
     use_fp16: bool = True,
-) -> Embedder:
+) -> BGEEmbedder:
     """
     Get the global embedder instance (singleton).
 
@@ -203,15 +245,15 @@ def get_embedder(
         use_fp16: Use FP16 for faster inference
 
     Returns:
-        Embedder instance
+        BGEEmbedder instance
     """
-    return Embedder(model_name=model_name, use_fp16=use_fp16)
+    return BGEEmbedder(model_name=model_name, use_fp16=use_fp16)
 
 
 def compute_similarity(
     text1: str,
     text2: str,
-    embedder: Optional[Embedder] = None,
+    embedder: Optional[BGEEmbedder] = None,
 ) -> float:
     """
     Compute similarity between two texts.
@@ -219,7 +261,7 @@ def compute_similarity(
     Args:
         text1: First text
         text2: Second text
-        embedder: Embedder instance (uses global if None)
+        embedder: BGEEmbedder instance (uses global if None)
 
     Returns:
         Cosine similarity score
