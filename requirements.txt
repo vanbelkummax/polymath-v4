@@ -10,10 +10,15 @@ pymupdf>=1.23.0
 # Embeddings (local GPU)
 sentence-transformers>=2.2.0
 torch>=2.1.0
+FlagEmbedding>=1.2.0
+
+# Vector database extension
+pgvector>=0.2.0
 
 # Google Cloud (Gemini)
 google-cloud-aiplatform>=1.40.0
 google-cloud-storage>=2.14.0
+google-generativeai>=0.3.0
 
 # Neo4j
 neo4j>=5.15.0
