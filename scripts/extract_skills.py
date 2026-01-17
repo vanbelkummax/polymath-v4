@@ -42,7 +42,7 @@ For each skill found, provide:
 - description: One-sentence summary
 - steps: List of concrete steps (if applicable)
 - prerequisites: Required knowledge/tools
-- domain: Research field
+- skill_type: One of: method, workflow, analysis, integration
 - confidence: 0.0-1.0
 
 Return JSON array of skills. If no skills found, return [].
@@ -72,10 +72,13 @@ def get_skill_candidates(conn, limit: int = 100, doc_id: str = None) -> List[Dic
             WHERE d.doc_id = %s
             AND LENGTH(p.passage_text) > 200
             AND p.is_superseded = FALSE
-            AND p.passage_id NOT IN (SELECT passage_id FROM paper_skills WHERE passage_id IS NOT NULL)
+            AND NOT EXISTS (
+                SELECT 1 FROM paper_skills ps
+                WHERE %s = ANY(ps.source_passage_ids)
+            )
             ORDER BY pc.confidence DESC NULLS LAST
             LIMIT %s
-        """, (doc_id, limit))
+        """, (doc_id, doc_id, limit))
     else:
         cur.execute("""
             SELECT DISTINCT p.passage_id, p.passage_text, d.title, d.doc_id
@@ -86,7 +89,6 @@ def get_skill_candidates(conn, limit: int = 100, doc_id: str = None) -> List[Dic
             AND pc.confidence > 0.7
             AND LENGTH(p.passage_text) > 300
             AND p.is_superseded = FALSE
-            AND p.passage_id NOT IN (SELECT passage_id FROM paper_skills WHERE passage_id IS NOT NULL)
             ORDER BY pc.confidence DESC
             LIMIT %s
         """, (limit,))
@@ -136,7 +138,7 @@ def extract_skills_from_passage(passage: Dict) -> List[Dict]:
         return skills
 
     except Exception as e:
-        logger.debug(f"Error extracting skills: {e}")
+        logger.warning(f"Error extracting skills: {e}")
         return []
 
 
@@ -144,36 +146,74 @@ def store_skill(conn, skill: Dict, passage: Dict) -> Optional[str]:
     """Store extracted skill in database."""
     cur = conn.cursor()
 
+    skill_name = skill.get('name', 'unnamed-skill')
+    description = skill.get('description', '')
+    steps = skill.get('steps', [])
+    prerequisites = skill.get('prerequisites', [])
+    skill_type = skill.get('skill_type', 'method')
+
+    # Ensure steps and prerequisites are lists
+    if isinstance(steps, str):
+        steps = [steps]
+    if isinstance(prerequisites, str):
+        prerequisites = [prerequisites]
+
     try:
-        cur.execute("""
-            INSERT INTO paper_skills (
+        # Check if skill already exists
+        cur.execute("SELECT skill_id, source_passage_ids, source_doc_ids FROM paper_skills WHERE skill_name = %s", (skill_name,))
+        existing = cur.fetchone()
+
+        if existing:
+            # Merge evidence into existing skill
+            skill_id, existing_passages, existing_docs = existing
+            existing_passages = existing_passages or []
+            existing_docs = existing_docs or []
+
+            # Add new passage/doc if not already present
+            new_passage_id = passage['passage_id']
+            new_doc_id = passage['doc_id']
+
+            updated_passages = list(set(existing_passages + [new_passage_id]))
+            updated_docs = list(set(existing_docs + [new_doc_id]))
+
+            cur.execute("""
+                UPDATE paper_skills SET
+                    source_passage_ids = %s,
+                    source_doc_ids = %s,
+                    evidence_count = %s,
+                    updated_at = NOW()
+                WHERE skill_id = %s
+                RETURNING skill_id
+            """, (
+                updated_passages,
+                updated_docs,
+                len(updated_passages),
+                skill_id
+            ))
+        else:
+            # Create new skill
+            cur.execute("""
+                INSERT INTO paper_skills (
+                    skill_name,
+                    skill_type,
+                    description,
+                    steps,
+                    prerequisites,
+                    source_passage_ids,
+                    source_doc_ids,
+                    evidence_count,
+                    status
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, 1, 'draft')
+                RETURNING skill_id
+            """, (
                 skill_name,
-                skill_description,
-                skill_steps,
+                skill_type,
+                description,
+                steps,
                 prerequisites,
-                domain,
-                confidence,
-                source_doc_id,
-                passage_id,
-                extractor_model,
-                extractor_version
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (skill_name) DO UPDATE SET
-                confidence = GREATEST(paper_skills.confidence, EXCLUDED.confidence),
-                updated_at = NOW()
-            RETURNING skill_id
-        """, (
-            skill.get('name', 'unnamed-skill'),
-            skill.get('description', ''),
-            json.dumps(skill.get('steps', [])),
-            json.dumps(skill.get('prerequisites', [])),
-            skill.get('domain', 'general'),
-            skill.get('confidence', 0.5),
-            passage['doc_id'],
-            passage['passage_id'],
-            config.GEMINI_REALTIME_MODEL,
-            'v4-extract'
-        ))
+                [passage['passage_id']],
+                [passage['doc_id']]
+            ))
 
         result = cur.fetchone()
         conn.commit()
@@ -181,7 +221,7 @@ def store_skill(conn, skill: Dict, passage: Dict) -> Optional[str]:
 
     except Exception as e:
         conn.rollback()
-        logger.debug(f"Error storing skill: {e}")
+        logger.warning(f"Error storing skill: {e}")
         return None
 
 
@@ -232,17 +272,17 @@ def main():
     # Show summary
     cur = conn.cursor()
     cur.execute("""
-        SELECT skill_name, domain, confidence, gate1_evidence
+        SELECT skill_name, skill_type, evidence_count, status
         FROM paper_skills
         ORDER BY created_at DESC
         LIMIT 10
     """)
 
-    print(f"\n{'Recent Skills':<40} {'Domain':<20} {'Conf':<6} {'Evidence'}")
+    print(f"\n{'Recent Skills':<40} {'Type':<15} {'Evidence':<10} {'Status'}")
     print("-" * 80)
     for row in cur.fetchall():
-        name, domain, conf, evidence = row
-        print(f"{name[:40]:<40} {domain[:20]:<20} {conf:.2f}  {evidence or 0}")
+        name, skill_type, evidence, status = row
+        print(f"{name[:40]:<40} {(skill_type or 'unknown')[:15]:<15} {evidence or 0:<10} {status}")
 
     conn.close()
 

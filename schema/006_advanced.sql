@@ -117,8 +117,8 @@ SELECT
     COUNT(DISTINCT cf.file_id) as file_count,
     COUNT(DISTINCT cc.chunk_id) as chunk_count
 FROM repo_queue rq
-LEFT JOIN paper_repos pr ON rq.repo_id = pr.repo_id
+LEFT JOIN paper_repos pr ON rq.repo_url = pr.repo_url
 LEFT JOIN documents d ON pr.doc_id = d.doc_id
-LEFT JOIN code_files cf ON rq.repo_id = cf.repo_id
+LEFT JOIN code_files cf ON rq.repo_name = cf.repo_name
 LEFT JOIN code_chunks cc ON cf.file_id = cc.file_id
-GROUP BY rq.repo_id, rq.repo_url, rq.repo_name, rq.status, d.title, d.doc_id;
+GROUP BY rq.queue_id, rq.repo_url, rq.repo_name, rq.status, d.title, d.doc_id;
