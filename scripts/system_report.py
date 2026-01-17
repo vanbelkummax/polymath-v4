@@ -158,7 +158,7 @@ def check_services() -> Dict:
     try:
         result = subprocess.run(
             ['docker', 'exec', 'polymax-neo4j', 'cypher-shell',
-             '-u', 'neo4j', '-p', 'polymathic2026', 'RETURN 1'],
+             '-u', 'neo4j', '-p', os.environ.get('NEO4J_PASSWORD', 'your_password'), 'RETURN 1'],
             capture_output=True, timeout=10
         )
         services['neo4j'] = 'running' if result.returncode == 0 else 'error'

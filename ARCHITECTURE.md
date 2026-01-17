@@ -378,7 +378,7 @@ PHASE 4: GRAPH SYNC (Periodic)
 # Required
 POSTGRES_DSN=dbname=polymath user=polymath host=/var/run/postgresql
 NEO4J_URI=bolt://localhost:7687
-NEO4J_PASSWORD=polymathic2026
+NEO4J_PASSWORD=your_neo4j_password
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 
 # Optional

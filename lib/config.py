@@ -28,15 +28,15 @@ class Config:
     # Neo4j
     NEO4J_URI: str = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
     NEO4J_USER: str = os.environ.get("NEO4J_USER", "neo4j")
-    NEO4J_PASSWORD: str = os.environ.get("NEO4J_PASSWORD", "polymathic2026")
+    NEO4J_PASSWORD: str = os.environ.get("NEO4J_PASSWORD", "your_neo4j_password")
 
     # Google Cloud / Gemini
-    GCP_PROJECT: str = os.environ.get("GCP_PROJECT", "fifth-branch-483806-m1")
+    GCP_PROJECT: str = os.environ.get("GCP_PROJECT", "your-gcp-project-id")
     GCP_LOCATION: str = os.environ.get("GCP_LOCATION", "us-central1")
     GCS_BUCKET: str = os.environ.get("GCS_BUCKET", "polymath-batch-jobs")
     GOOGLE_APPLICATION_CREDENTIALS: str = os.environ.get(
         "GOOGLE_APPLICATION_CREDENTIALS",
-        "/home/user/.gcp/service-account.json"
+        "/path/to/service-account.json"
     )
 
     # Models

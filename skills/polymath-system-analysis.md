@@ -44,7 +44,7 @@ UNION ALL SELECT 'repo_queue', COUNT(*) FROM repo_queue
 "
 
 # Neo4j node counts
-docker exec polymax-neo4j cypher-shell -u neo4j -p polymathic2026 "
+docker exec polymax-neo4j cypher-shell -u neo4j -p $NEO4J_PASSWORD "
 MATCH (n) RETURN labels(n)[0] as type, count(n) as count
 ORDER BY count DESC LIMIT 10
 "

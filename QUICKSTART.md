@@ -38,8 +38,8 @@ vim .env  # Set your credentials
 ```bash
 POSTGRES_DSN=dbname=polymath user=polymath host=/var/run/postgresql
 NEO4J_URI=bolt://localhost:7687
-NEO4J_PASSWORD=polymathic2026
-GOOGLE_APPLICATION_CREDENTIALS=/home/user/.gcp/service-account.json
+NEO4J_PASSWORD=your_neo4j_password
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 GITHUB_TOKEN=ghp_your_token_here  # Optional but recommended
 ```
 
@@ -62,12 +62,12 @@ psql -U polymath -d polymath -f schema/004_skills.sql
 docker run -d \
   --name polymath-neo4j \
   -p 7474:7474 -p 7687:7687 \
-  -e NEO4J_AUTH=neo4j/polymathic2026 \
+  -e NEO4J_AUTH=neo4j/your_neo4j_password \
   -v neo4j_data:/data \
   neo4j:5.15-community
 
 # Apply Neo4j constraints
-cat schema/005_neo4j.cypher | docker exec -i polymath-neo4j cypher-shell -u neo4j -p polymathic2026
+cat schema/005_neo4j.cypher | docker exec -i polymath-neo4j cypher-shell -u neo4j -p your_neo4j_password
 ```
 
 ---
@@ -148,7 +148,7 @@ python scripts/github_ingest.py https://github.com/scverse/squidpy
 python scripts/sync_neo4j.py --incremental
 
 # Verify
-docker exec polymath-neo4j cypher-shell -u neo4j -p polymathic2026 \
+docker exec polymath-neo4j cypher-shell -u neo4j -p your_neo4j_password \
   "MATCH (n) RETURN labels(n)[0] as type, count(n) ORDER BY count(n) DESC LIMIT 5"
 ```
 
