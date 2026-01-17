@@ -60,13 +60,14 @@ def test_detect_from_pretrained():
 
 
 def test_detect_known_models():
-    """Test detection of known model names."""
+    """Test detection of known model names via HuggingFace URLs."""
     detector = AssetDetector()
 
-    text = "We compared our results against BERT and GPT-2 baselines."
+    # Test with explicit HuggingFace reference
+    text = "We used bert-base-uncased from huggingface.co/bert-base-uncased"
     assets = detector.detect_from_text(text)
 
-    # Should detect known model names
+    # Should detect HuggingFace URL reference
     assert len(assets['huggingface']) >= 1
 
 

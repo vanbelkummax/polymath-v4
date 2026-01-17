@@ -91,6 +91,29 @@ def chunk_fixed_size(
 
         para_size = len(para)
 
+        # Handle single paragraph larger than max_size - split by sentences/words
+        if para_size > max_size:
+            # First save any current chunk
+            if current_chunk:
+                content = '\n\n'.join(current_chunk)
+                chunks.append({
+                    'content': content,
+                    'header': None,
+                    'char_start': char_pos - len(content),
+                    'char_end': char_pos
+                })
+                current_chunk = []
+                current_size = 0
+
+            # Split large paragraph by sentences or word boundaries
+            sub_chunks = _split_large_text(para, max_size, overlap)
+            for sub in sub_chunks:
+                sub['char_start'] = char_pos + sub['char_start']
+                sub['char_end'] = char_pos + sub['char_end']
+                chunks.append(sub)
+            char_pos += para_size + 2
+            continue
+
         if current_size + para_size > max_size and current_chunk:
             # Save current chunk
             content = '\n\n'.join(current_chunk)
@@ -121,6 +144,109 @@ def chunk_fixed_size(
             'content': content,
             'header': None,
             'char_start': char_pos - len(content),
+            'char_end': char_pos
+        })
+
+    return chunks
+
+
+def _split_large_text(text: str, max_size: int, overlap: int) -> List[Dict]:
+    """Split a large text block by sentence or word boundaries."""
+    chunks = []
+
+    # Try splitting by sentences first
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+
+    current = []
+    current_size = 0
+    char_pos = 0
+
+    for sent in sentences:
+        sent_size = len(sent)
+
+        # If single sentence is too large, split by words
+        if sent_size > max_size:
+            if current:
+                content = ' '.join(current)
+                chunks.append({
+                    'content': content,
+                    'header': None,
+                    'char_start': char_pos - current_size,
+                    'char_end': char_pos
+                })
+                current = []
+                current_size = 0
+
+            # Split by words
+            words = sent.split()
+            word_chunk = []
+            word_size = 0
+            for word in words:
+                if word_size + len(word) + 1 > max_size and word_chunk:
+                    content = ' '.join(word_chunk)
+                    chunks.append({
+                        'content': content,
+                        'header': None,
+                        'char_start': char_pos,
+                        'char_end': char_pos + len(content)
+                    })
+                    char_pos += len(content) + 1
+                    # Overlap
+                    if overlap > 0:
+                        overlap_words = []
+                        overlap_size = 0
+                        for w in reversed(word_chunk):
+                            if overlap_size + len(w) + 1 <= overlap:
+                                overlap_words.insert(0, w)
+                                overlap_size += len(w) + 1
+                            else:
+                                break
+                        word_chunk = overlap_words
+                        word_size = overlap_size
+                    else:
+                        word_chunk = []
+                        word_size = 0
+                word_chunk.append(word)
+                word_size += len(word) + 1
+
+            if word_chunk:
+                content = ' '.join(word_chunk)
+                chunks.append({
+                    'content': content,
+                    'header': None,
+                    'char_start': char_pos,
+                    'char_end': char_pos + len(content)
+                })
+                char_pos += len(content) + 1
+            continue
+
+        if current_size + sent_size + 1 > max_size and current:
+            content = ' '.join(current)
+            chunks.append({
+                'content': content,
+                'header': None,
+                'char_start': char_pos - current_size,
+                'char_end': char_pos
+            })
+            # Overlap from last sentence
+            if overlap > 0 and current:
+                last = current[-1]
+                current = [last[-overlap:]] if len(last) > overlap else [last]
+                current_size = len(current[0])
+            else:
+                current = []
+                current_size = 0
+
+        current.append(sent)
+        current_size += sent_size + 1
+        char_pos = current_size
+
+    if current:
+        content = ' '.join(current)
+        chunks.append({
+            'content': content,
+            'header': None,
+            'char_start': char_pos - current_size,
             'char_end': char_pos
         })
 
