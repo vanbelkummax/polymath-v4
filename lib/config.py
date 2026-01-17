@@ -52,6 +52,10 @@ class Config:
     MAX_PASSAGE_LENGTH: int = 2000
     CHUNK_OVERLAP: int = 200
 
+    # Database Pool
+    PG_POOL_MIN: int = int(os.environ.get("PG_POOL_MIN", "2"))
+    PG_POOL_MAX: int = int(os.environ.get("PG_POOL_MAX", "10"))
+
     # GitHub
     GITHUB_TOKEN: str = os.environ.get("GITHUB_TOKEN", "")
 

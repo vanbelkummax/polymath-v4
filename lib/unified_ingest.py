@@ -12,9 +12,10 @@ Usage:
 """
 
 import hashlib
+import json
 import logging
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -76,25 +77,19 @@ class UnifiedIngestor:
         self.detect_assets = detect_assets
         self.sync_neo4j = sync_neo4j
 
-        self._conn = None
+        # Shared resources (thread-safe or re-created per task)
         self._embedder = None
-        self._asset_detector = None
         self._neo4j = None
 
     def _get_connection(self):
-        if self._conn is None or self._conn.closed:
-            self._conn = psycopg2.connect(config.POSTGRES_DSN)
-        return self._conn
+        """Create a new connection (each task gets its own for thread safety)."""
+        return psycopg2.connect(config.POSTGRES_DSN)
 
     def _get_embedder(self) -> BGEEmbedder:
+        """Get shared embedder (thread-safe for inference)."""
         if self._embedder is None:
             self._embedder = BGEEmbedder()
         return self._embedder
-
-    def _get_asset_detector(self) -> AssetDetector:
-        if self._asset_detector is None:
-            self._asset_detector = AssetDetector()
-        return self._asset_detector
 
     def _get_neo4j(self):
         if self._neo4j is None and self.sync_neo4j:
@@ -139,6 +134,7 @@ class UnifiedIngestor:
                 errors=[f"File not found: {pdf_path}"]
             )
 
+        # Create connection for this task (thread-safe)
         conn = self._get_connection()
         cur = conn.cursor()
         errors = []
@@ -182,8 +178,8 @@ class UnifiedIngestor:
 
             # 4. Insert document
             cur.execute("""
-                INSERT INTO documents (doc_id, title, authors, title_hash, file_path, content_hash, ingested_at)
-                VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                INSERT INTO documents (doc_id, title, authors, title_hash, pdf_path, ingest_batch)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT (doc_id) DO NOTHING
                 RETURNING doc_id
             """, (
@@ -192,7 +188,7 @@ class UnifiedIngestor:
                 authors[:10] if authors else None,
                 title_hash,
                 str(pdf_path),
-                content_hash
+                batch_name
             ))
 
             # 5. Chunk text
@@ -231,9 +227,9 @@ class UnifiedIngestor:
                 cur.execute("""
                     INSERT INTO passages (
                         passage_id, doc_id, passage_text, page_num,
-                        chunk_index, header, char_start, char_end, embedding
+                        passage_index, section, embedding
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (passage_id) DO NOTHING
                 """, (
                     passage_id,
@@ -242,8 +238,6 @@ class UnifiedIngestor:
                     chunk.get('page_num'),
                     i,
                     chunk.get('header'),
-                    chunk.get('char_start'),
-                    chunk.get('char_end'),
                     embedding
                 ))
                 passages_added += 1
@@ -254,33 +248,43 @@ class UnifiedIngestor:
             assets_detected = 0
             if self.detect_assets:
                 try:
-                    detector = self._get_asset_detector()
+                    detector = AssetDetector()
                     for i, chunk in enumerate(chunks):
-                        assets = detector.detect_all(chunk['content'])
+                        # Use detect_from_text for string input
+                        passage_id = passage_ids[i] if i < len(passage_ids) else None
+                        assets = detector.detect_from_text(chunk['content'], passage_id or '')
 
                         for asset in assets.get('github', []):
+                            # Extract owner/name from identifier
+                            identifier = asset.identifier
+                            owner = asset.extra.get('owner', '')
+                            name = asset.extra.get('name', '')
+
                             cur.execute("""
-                                INSERT INTO repo_queue (repo_url, source_doc_id, source_passage_id, priority)
-                                VALUES (%s, %s, %s, %s)
+                                INSERT INTO repo_queue (repo_url, owner, repo_name, first_seen_doc_id, source, priority)
+                                VALUES (%s, %s, %s, %s, 'paper_detection', 5)
                                 ON CONFLICT (repo_url) DO UPDATE SET
-                                    priority = GREATEST(repo_queue.priority, EXCLUDED.priority)
+                                    priority = GREATEST(repo_queue.priority + 1, EXCLUDED.priority),
+                                    source_doc_count = COALESCE(repo_queue.source_doc_count, 0) + 1
                             """, (
-                                asset['url'],
-                                doc_id,
-                                passage_ids[i] if i < len(passage_ids) else None,
-                                asset.get('priority', 50)
+                                identifier,
+                                owner,
+                                name,
+                                doc_id
                             ))
                             assets_detected += 1
 
                         for asset in assets.get('huggingface', []):
+                            model_id_raw = asset.identifier
                             cur.execute("""
-                                INSERT INTO hf_model_mentions (model_id, doc_id, passage_id)
-                                VALUES (%s, %s, %s)
+                                INSERT INTO hf_model_mentions (model_id_raw, doc_id, passage_id, context)
+                                VALUES (%s, %s, %s, %s)
                                 ON CONFLICT DO NOTHING
                             """, (
-                                asset['model_id'],
+                                model_id_raw,
                                 doc_id,
-                                passage_ids[i] if i < len(passage_ids) else None
+                                passage_id,
+                                asset.context[:500] if asset.context else None
                             ))
                             assets_detected += 1
 
@@ -331,6 +335,9 @@ class UnifiedIngestor:
                 passages_added=0,
                 errors=[str(e)]
             )
+        finally:
+            # Always close connection for this task
+            conn.close()
 
     def ingest_directory(
         self,
@@ -365,27 +372,34 @@ class UnifiedIngestor:
         # Track in database
         conn = self._get_connection()
         cur = conn.cursor()
-        cur.execute("""
-            INSERT INTO ingest_runs (run_id, run_type, metadata)
-            VALUES (%s, 'pdf', %s)
-        """, (run_id, {'batch_name': batch_name, 'pattern': pattern}))
-        conn.commit()
+        try:
+            cur.execute("""
+                INSERT INTO ingest_runs (run_id, run_type, metadata)
+                VALUES (%s, 'pdf', %s)
+            """, (run_id, json.dumps({'batch_name': batch_name, 'pattern': pattern})))
+            conn.commit()
+        finally:
+            conn.close()
 
         logger.info(f"Starting batch ingestion: {len(pdf_files)} files")
 
-        # Process files
+        # Pre-load embedder (single instance, shared)
+        if self.compute_embeddings:
+            self._get_embedder()
+
+        # Process files with thread pool (each task gets its own connection)
         with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {
                 executor.submit(self.ingest_pdf, str(f), batch_name): f
                 for f in pdf_files
             }
 
-            for future in futures:
+            for future in as_completed(futures):
+                pdf_path = futures[future]
                 try:
                     result = future.result()
                     results.append(result)
                 except Exception as e:
-                    pdf_path = futures[future]
                     results.append(IngestResult(
                         doc_id='',
                         title=str(pdf_path),
@@ -399,15 +413,20 @@ class UnifiedIngestor:
         passages_added = sum(r.passages_added for r in results)
 
         # Update run record
-        cur.execute("""
-            UPDATE ingest_runs SET
-                completed_at = NOW(),
-                status = 'completed',
-                items_processed = %s,
-                items_failed = %s
-            WHERE run_id = %s
-        """, (successful, failed, run_id))
-        conn.commit()
+        conn = self._get_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute("""
+                UPDATE ingest_runs SET
+                    completed_at = NOW(),
+                    status = 'completed',
+                    items_processed = %s,
+                    items_failed = %s
+                WHERE run_id = %s
+            """, (successful, failed, run_id))
+            conn.commit()
+        finally:
+            conn.close()
 
         return BatchResult(
             total_files=len(pdf_files),
@@ -420,8 +439,6 @@ class UnifiedIngestor:
 
     def close(self):
         """Clean up resources."""
-        if self._conn and not self._conn.closed:
-            self._conn.close()
         if self._neo4j:
             self._neo4j.close()
 
