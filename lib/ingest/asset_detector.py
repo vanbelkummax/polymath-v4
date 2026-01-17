@@ -191,6 +191,22 @@ class AssetDetector:
 
         return assets
 
+    def detect_from_text(self, text: str, passage_id: str = '') -> Dict[str, List[DetectedAsset]]:
+        """
+        Detect all assets from a single text string.
+
+        Convenience method that wraps detect_all() for single text input.
+
+        Args:
+            text: Text to search for assets
+            passage_id: Optional passage ID to associate with detected assets
+
+        Returns:
+            Dict with 'github', 'huggingface', 'citations' lists
+        """
+        passages = [{'passage_text': text, 'passage_id': passage_id}]
+        return self.detect_all(passages)
+
     def _get_context(self, text: str, pos: int, window: int = 200) -> str:
         """Get surrounding context for an asset mention."""
         start = max(0, pos - window)

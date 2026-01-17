@@ -1,5 +1,5 @@
 """
-PDF parsing for Polymath v3.
+PDF parsing for Polymath v4.
 
 Uses PyMuPDF (fitz) as primary parser with fallback options.
 Handles:

@@ -39,9 +39,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Config
-REPOS_DIR = Path("/home/user/work/polymax/data/github_repos")
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN") or os.environ.get("PAT_2")
+# Config - import from lib.config
+from lib.config import config
+
+REPOS_DIR = config.REPOS_DIR
+# GITHUB_TOKEN: Uses GITHUB_TOKEN env var (or PAT_2 as legacy fallback)
+GITHUB_TOKEN = config.GITHUB_TOKEN or os.environ.get("PAT_2")
 
 # Try importing from polymath-repo if available
 try:
@@ -170,7 +173,7 @@ def add_to_queue(conn, owner: str, repo: str, source: str, context: str = None,
 
     # Check if already in queue
     cur.execute("""
-        SELECT repo_id, status FROM repo_queue
+        SELECT queue_id, status FROM repo_queue
         WHERE repo_url LIKE %s OR (owner = %s AND repo_name = %s)
     """, (f"%{owner}/{repo}%", owner, repo))
 
@@ -184,7 +187,7 @@ def add_to_queue(conn, owner: str, repo: str, source: str, context: str = None,
         INSERT INTO repo_queue (owner, repo_name, repo_url, source, context, priority, status)
         VALUES (%s, %s, %s, %s, %s, %s, 'pending')
         ON CONFLICT DO NOTHING
-        RETURNING repo_id
+        RETURNING queue_id
     """, (owner, repo, f"https://github.com/{owner}/{repo}", source, context, priority))
 
     result = cur.fetchone()
