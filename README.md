@@ -2,6 +2,16 @@
 
 > **A Postgres-first knowledge system for scientific papers, code repositories, and cross-domain insights.**
 
+<p align="center">
+  <img src="docs/architecture.png" alt="Polymath v4 Pipeline" width="800">
+</p>
+
+<p align="center">
+  <em>Document → Process → Store → Search: The Polymath pipeline transforms scientific papers into a searchable knowledge graph.</em>
+</p>
+
+---
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           POLYMATH v4 ARCHITECTURE                          │
