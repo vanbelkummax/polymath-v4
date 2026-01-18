@@ -122,11 +122,14 @@ def submit_batch_job(conn, passages: List[Dict]) -> str:
 
     for i, p in enumerate(passages):
         prompt = CONCEPT_PROMPT.format(passage=p['passage_text'][:3000])
+        # Vertex AI batch format requires "request" wrapper
         request = {
-            "contents": [{"parts": [{"text": prompt}], "role": "user"}],
-            "generationConfig": {
-                "temperature": 0.1,
-                "maxOutputTokens": 2048
+            "request": {
+                "contents": [{"parts": [{"text": prompt}], "role": "user"}],
+                "generationConfig": {
+                    "temperature": 0.1,
+                    "maxOutputTokens": 2048
+                }
             }
         }
         jsonl_lines.append(json.dumps(request))
