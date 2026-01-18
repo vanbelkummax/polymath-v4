@@ -31,6 +31,7 @@ class DetectedAsset:
     identifier: str
     context: str
     passage_id: str
+    confidence: float = 1.0
     extra: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -223,16 +224,17 @@ class AssetDetector:
         for repo in repos:
             # Add to paper_repos
             cur.execute("""
-                INSERT INTO paper_repos (doc_id, repo_url, repo_owner, repo_name, passage_id, context)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO paper_repos (doc_id, repo_url, repo_owner, repo_name, detection_method, confidence, context)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (doc_id, repo_url) DO NOTHING
             """, (
                 doc_id,
                 repo.identifier,
                 repo.extra.get('owner'),
                 repo.extra.get('name'),
-                repo.passage_id if repo.passage_id else None,
-                repo.context[:500]
+                repo.asset_type,  # detection_method
+                repo.confidence,
+                repo.context[:500] if repo.context else None
             ))
 
             # Add to queue (or update priority)

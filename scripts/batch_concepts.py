@@ -45,7 +45,7 @@ For each concept, include:
 - confidence: 0.0-1.0 how certain you are
 
 Return ONLY valid JSON, no markdown:
-{"methods": [{"name": "...", "confidence": 0.9}], "problems": [...], ...}
+{{"methods": [{{"name": "...", "confidence": 0.9}}], "problems": [...], ...}}
 
 PASSAGE:
 {passage}
@@ -101,47 +101,77 @@ def create_batch_request(passages: List[Dict]) -> List[Dict]:
 
 
 def submit_batch_job(conn, passages: List[Dict]) -> str:
-    """Submit batch job to Vertex AI."""
+    """Submit batch job using Google GenAI SDK."""
     from google.cloud import storage
-    from google.cloud import aiplatform
+    from google import genai
+    from google.genai import types
 
-    # Initialize
-    aiplatform.init(project=config.GCP_PROJECT, location=config.GCP_LOCATION)
+    # Initialize GenAI client with Vertex AI
+    client = genai.Client(
+        vertexai=True,
+        project=config.GCP_PROJECT,
+        location=config.GCP_LOCATION
+    )
 
     # Create request file
     job_id = f"concepts_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    requests = create_batch_request(passages)
+
+    # Create JSONL content for batch API
+    jsonl_lines = []
+    passage_mapping = {}  # Map request index to passage_id
+
+    for i, p in enumerate(passages):
+        prompt = CONCEPT_PROMPT.format(passage=p['passage_text'][:3000])
+        request = {
+            "contents": [{"parts": [{"text": prompt}], "role": "user"}],
+            "generationConfig": {
+                "temperature": 0.1,
+                "maxOutputTokens": 2048
+            }
+        }
+        jsonl_lines.append(json.dumps(request))
+        passage_mapping[str(i)] = p['passage_id']
 
     # Upload to GCS
-    client = storage.Client()
-    bucket = client.bucket(config.GCS_BUCKET)
+    storage_client = storage.Client()
+    bucket = storage_client.bucket(config.GCS_BUCKET)
 
-    input_uri = f"gs://{config.GCS_BUCKET}/batch_input/{job_id}.jsonl"
-    output_uri = f"gs://{config.GCS_BUCKET}/batch_output/{job_id}/"
+    input_path = f"batch_input/{job_id}.jsonl"
+    input_uri = f"gs://{config.GCS_BUCKET}/{input_path}"
 
-    blob = bucket.blob(f"batch_input/{job_id}.jsonl")
-    blob.upload_from_string('\n'.join(json.dumps(r) for r in requests))
-    logger.info(f"Uploaded {len(requests)} requests to {input_uri}")
+    blob = bucket.blob(input_path)
+    blob.upload_from_string('\n'.join(jsonl_lines))
+    logger.info(f"Uploaded {len(passages)} requests to {input_uri}")
 
-    # Submit batch job
-    batch_job = aiplatform.BatchPredictionJob.submit(
-        source_model=f"publishers/google/models/{config.GEMINI_MODEL}",
-        input_dataset=input_uri,
-        output_uri_prefix=output_uri,
-    )
+    # Save passage mapping for result processing
+    mapping_blob = bucket.blob(f"batch_input/{job_id}_mapping.json")
+    mapping_blob.upload_from_string(json.dumps(passage_mapping, indent=2))
+
+    # Submit batch job using GenAI SDK
+    try:
+        job = client.batches.create(
+            model=config.GEMINI_MODEL,
+            src=input_uri,
+            config=types.CreateBatchJobConfig(
+                display_name=f"polymath_concepts_{job_id}"
+            )
+        )
+        job_name = job.name
+        logger.info(f"Submitted batch job: {job_name}")
+        logger.info(f"Initial state: {job.state}")
+    except Exception as e:
+        logger.error(f"Failed to submit batch job: {e}")
+        raise
 
     # Track in database
     cur = conn.cursor()
     cur.execute("""
         INSERT INTO concept_batch_jobs (job_id, gcs_input_uri, gcs_output_uri, passage_count, status)
         VALUES (%s, %s, %s, %s, 'running')
-    """, (batch_job.name, input_uri, output_uri, len(passages)))
+    """, (job_name, input_uri, f"gs://{config.GCS_BUCKET}/batch_output/{job_id}/", len(passages)))
     conn.commit()
 
-    logger.info(f"Submitted batch job: {batch_job.name}")
-    logger.info(f"Monitor at: https://console.cloud.google.com/vertex-ai/batch-predictions")
-
-    return batch_job.name
+    return job_name
 
 
 def check_job_status(conn) -> List[Dict]:

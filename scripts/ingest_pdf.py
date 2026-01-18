@@ -38,14 +38,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Lazy load embedder (GPU resource)
+# Lazy load embedder (GPU resource) - thread-safe via module-level lock
+import threading
 _embedder = None
+_embedder_lock = threading.Lock()
 
 def get_embedder():
     global _embedder
     if _embedder is None:
-        from lib.embeddings.bge_m3 import BGEM3Embedder
-        _embedder = BGEM3Embedder()
+        with _embedder_lock:
+            if _embedder is None:  # Double-check after acquiring lock
+                from lib.embeddings.bge_m3 import BGEM3Embedder
+                _embedder = BGEM3Embedder()
+                # Force model loading now (before threads use it)
+                _ = _embedder.model
     return _embedder
 
 

@@ -8,6 +8,19 @@ import os
 from pathlib import Path
 from dataclasses import dataclass
 
+# Load .env file if it exists
+_env_file = Path(__file__).parent.parent / ".env"
+if _env_file.exists():
+    with open(_env_file) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                key, _, value = line.partition('=')
+                key = key.strip()
+                value = value.strip()
+                if key and key not in os.environ:  # Don't override existing env vars
+                    os.environ[key] = value
+
 
 @dataclass
 class Config:
@@ -40,7 +53,7 @@ class Config:
     )
 
     # Models
-    GEMINI_MODEL: str = "gemini-2.5-flash-lite-preview-06-17"  # Batch API
+    GEMINI_MODEL: str = "gemini-2.5-flash-lite"  # Batch API
     GEMINI_REALTIME_MODEL: str = "gemini-2.5-flash-preview-05-20"  # Real-time
     EMBEDDING_MODEL: str = "BAAI/bge-m3"
     EMBEDDING_DIM: int = 1024

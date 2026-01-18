@@ -333,3 +333,49 @@ def search(query: str, n: int = 10, rerank: bool = True) -> List[Dict]:
         }
         for r in results
     ]
+
+
+# Global searcher instance for fast repeated queries
+_global_searcher: Optional[HybridSearcher] = None
+
+
+def warmup(rerank: bool = True) -> HybridSearcher:
+    """
+    Pre-warm the search models to avoid first-query latency.
+
+    Call this at application startup or before batch searches.
+    Returns a ready-to-use HybridSearcher.
+
+    Example:
+        # At startup
+        searcher = warmup()
+
+        # Fast queries (no model loading)
+        results = searcher.hybrid_search("spatial transcriptomics")
+    """
+    global _global_searcher
+
+    logger.info("Warming up search models...")
+
+    if _global_searcher is None:
+        _global_searcher = HybridSearcher(rerank=rerank)
+
+    # Pre-load embedder by encoding a dummy query
+    embedder = _global_searcher._get_embedder()
+    _ = embedder.model  # Force model loading
+    _ = embedder.embed_single("warmup query")  # Force CUDA initialization
+
+    # Pre-load reranker if enabled
+    if rerank:
+        _global_searcher._get_reranker()
+
+    logger.info("Search models warmed up and ready")
+    return _global_searcher
+
+
+def get_searcher(rerank: bool = True) -> HybridSearcher:
+    """Get the global searcher instance, warming up if needed."""
+    global _global_searcher
+    if _global_searcher is None:
+        return warmup(rerank=rerank)
+    return _global_searcher

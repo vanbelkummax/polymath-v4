@@ -10,6 +10,7 @@ We use dense embeddings for pgvector storage.
 """
 
 import logging
+import threading
 from typing import Optional, Union, List
 from functools import lru_cache
 
@@ -18,6 +19,10 @@ import numpy as np
 from lib.config import config
 
 logger = logging.getLogger(__name__)
+
+# Global lock for thread-safe model loading and encoding
+_model_lock = threading.Lock()
+_encode_lock = threading.Lock()
 
 
 class BGEEmbedder:
@@ -60,9 +65,12 @@ class BGEEmbedder:
 
     @property
     def model(self):
-        """Lazy load the model."""
+        """Lazy load the model (thread-safe)."""
         if self._model is None:
-            self._load_model()
+            with _model_lock:
+                # Double-check after acquiring lock
+                if self._model is None:
+                    self._load_model()
         return self._model
 
     def _load_model(self):
@@ -102,7 +110,7 @@ class BGEEmbedder:
         normalize: bool = True,
     ) -> np.ndarray:
         """
-        Encode texts into embeddings.
+        Encode texts into embeddings (thread-safe).
 
         Args:
             texts: Single text or list of texts
@@ -119,33 +127,35 @@ class BGEEmbedder:
         if not texts:
             return np.array([])
 
-        # Check for fallback model
-        if hasattr(self, "_is_fallback") and self._is_fallback:
-            embeddings = self.model.encode(
+        # Serialize GPU operations for thread safety
+        with _encode_lock:
+            # Check for fallback model
+            if hasattr(self, "_is_fallback") and self._is_fallback:
+                embeddings = self.model.encode(
+                    texts,
+                    batch_size=batch_size,
+                    normalize_embeddings=normalize,
+                    show_progress_bar=len(texts) > 100,
+                )
+                return embeddings
+
+            # BGE-M3 encoding
+            output = self.model.encode(
                 texts,
                 batch_size=batch_size,
-                normalize_embeddings=normalize,
-                show_progress_bar=len(texts) > 100,
+                max_length=max_length,
+                return_dense=True,
+                return_sparse=False,
+                return_colbert_vecs=False,
             )
+
+            embeddings = output["dense_vecs"]
+
+            if normalize:
+                norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+                embeddings = embeddings / np.maximum(norms, 1e-9)
+
             return embeddings
-
-        # BGE-M3 encoding
-        output = self.model.encode(
-            texts,
-            batch_size=batch_size,
-            max_length=max_length,
-            return_dense=True,
-            return_sparse=False,
-            return_colbert_vecs=False,
-        )
-
-        embeddings = output["dense_vecs"]
-
-        if normalize:
-            norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-            embeddings = embeddings / np.maximum(norms, 1e-9)
-
-        return embeddings
 
     def embed_single(self, text: str, **kwargs) -> np.ndarray:
         """
