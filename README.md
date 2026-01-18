@@ -41,29 +41,9 @@ Polymath v4 is a **polymathic knowledge system** designed to:
 
 Polymath uses a **waterfall approach** for metadata extraction, preferring richer sources:
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    METADATA WATERFALL                           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  1. ZOTERO CSV (Richest)                                       │
-│     ├── Title, Authors, Year, Venue                            │
-│     ├── DOI, Abstract                                          │
-│     └── Zotero Key for linking                                 │
-│              │                                                  │
-│              ▼ (if no match)                                    │
-│  2. DOI EXTRACTION                                             │
-│     ├── Parse DOI from PDF text                                │
-│     └── Use for CrossRef/OpenAlex lookup                       │
-│              │                                                  │
-│              ▼ (if no DOI)                                      │
-│  3. PDF EXTRACTION                                             │
-│     ├── Smart title extraction (skip headers, URLs)            │
-│     ├── First meaningful line as title                         │
-│     └── Filename as fallback                                   │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="docs/images/waterfall.png" alt="Metadata Waterfall" width="800">
+</p>
 
 ---
 
