@@ -66,6 +66,125 @@ def get_title_hash(title: str) -> str:
     return hashlib.sha256(normalized.encode()).hexdigest()[:16]
 
 
+def extract_title_from_text(text: str, fallback: str) -> str:
+    """
+    Extract title from PDF text with smart heuristics.
+
+    Skips:
+    - Short lines (< 10 chars)
+    - Lines that are mostly punctuation
+    - URL lines
+    - Header/footer patterns
+    """
+    import re
+
+    lines = text.strip().split('\n')
+
+    for line in lines[:20]:  # Check first 20 lines
+        line = line.strip()
+
+        # Skip short lines
+        if len(line) < 10:
+            continue
+
+        # Skip lines that are mostly punctuation/whitespace
+        alpha_chars = sum(1 for c in line if c.isalnum())
+        if alpha_chars < len(line) * 0.5:
+            continue
+
+        # Skip URLs and lines containing URLs
+        if 'http' in line.lower() or 'doi.org' in line.lower() or 'dl.acm.org' in line.lower():
+            continue
+
+        # Skip lines starting with common non-title patterns
+        if line.lower().startswith(('latest update', 'pdf download', 'open access')):
+            continue
+
+        # Skip common header patterns
+        skip_patterns = [
+            r'^page\s*\d+',
+            r'^\d+\s*$',
+            r'^(abstract|introduction|references|acknowledgments)',
+            r'^figure\s*\d+',
+            r'^table\s*\d+',
+            r'^(poster|article|review|letter|short\s*paper)',  # document type markers
+        ]
+        if any(re.match(p, line.lower()) for p in skip_patterns):
+            continue
+
+        # Found a good title candidate
+        return line[:200]
+
+    # Fallback to filename
+    return fallback
+
+
+def extract_doi_from_text(text: str) -> Optional[str]:
+    """Extract DOI from PDF text if present."""
+    import re
+    # Match DOI patterns like 10.1234/something
+    patterns = [
+        r'doi[:\s]*(\d{2}\.\d{4,}/[^\s]+)',
+        r'(10\.\d{4,}/[^\s]+)',
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text.lower())
+        if match:
+            doi = match.group(1).rstrip('.,)')
+            return doi
+    return None
+
+
+def get_pdf_hash(pdf_path: Path) -> str:
+    """Generate hash of PDF content for duplicate detection."""
+    with open(pdf_path, 'rb') as f:
+        return hashlib.sha256(f.read()).hexdigest()[:16]
+
+
+def load_zotero_metadata(csv_path: str) -> dict:
+    """
+    Load Zotero CSV into a lookup dict keyed by Linux PDF path.
+
+    Returns dict: {pdf_path: {title, doi, authors, year, abstract, venue, zotero_key}}
+    """
+    import csv
+
+    metadata = {}
+
+    with open(csv_path, encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            pdf_path = row.get('_pdf_path_linux', '').strip()
+            if not pdf_path:
+                continue
+
+            metadata[pdf_path] = {
+                'title': row.get('Title', '').strip(),
+                'doi': row.get('DOI', '').strip(),
+                'authors': row.get('Author', '').strip(),
+                'year': row.get('Publication Year', '').strip(),
+                'abstract': row.get('Abstract Note', '').strip(),
+                'venue': row.get('Publication Title', '').strip(),
+                'zotero_key': row.get('Key', '').strip(),
+            }
+
+    logger.info(f"Loaded Zotero metadata for {len(metadata)} PDFs")
+    return metadata
+
+
+# Global Zotero metadata cache
+_zotero_metadata = None
+
+
+def get_zotero_metadata(pdf_path: str) -> Optional[dict]:
+    """Get Zotero metadata for a PDF path if available."""
+    global _zotero_metadata
+    if _zotero_metadata is None:
+        return None
+    return _zotero_metadata.get(str(pdf_path))
+
+
 def get_doc_id(title: str, doi: str = None) -> uuid.UUID:
     """Generate deterministic doc_id."""
     if doi:
@@ -119,14 +238,59 @@ def ingest_single_pdf(
             result['error'] = 'No text extracted'
             return result
 
-        # Extract title from first line or filename
-        lines = parse_result.text.strip().split('\n')
-        title = lines[0][:200] if lines else pdf_path.stem
+        # Try Zotero metadata first (richest source)
+        zotero = get_zotero_metadata(str(pdf_path))
 
-        # Generate doc_id
-        doc_id = get_doc_id(title)
+        if zotero and zotero.get('title'):
+            # Use Zotero metadata
+            title = zotero['title']
+            doi = zotero.get('doi') or extract_doi_from_text(parse_result.text)
+            authors = zotero.get('authors', '')
+            year = zotero.get('year', '')
+            abstract = zotero.get('abstract', '')
+            venue = zotero.get('venue', '')
+            zotero_key = zotero.get('zotero_key', '')
+            metadata_source = 'zotero'
+        else:
+            # Fall back to PDF extraction
+            title = extract_title_from_text(parse_result.text, pdf_path.stem)
+            doi = extract_doi_from_text(parse_result.text)
+            authors = ''
+            year = ''
+            abstract = ''
+            venue = ''
+            zotero_key = ''
+            metadata_source = 'pdf_extraction'
+
+        # Generate PDF hash for duplicate detection
+        pdf_hash = get_pdf_hash(pdf_path)
+
+        # Generate doc_id (use DOI if available for stability)
+        doc_id = get_doc_id(title, doi)
         result['doc_id'] = str(doc_id)
         result['title'] = title
+        result['doi'] = doi
+        result['metadata_source'] = metadata_source
+
+        # Check for existing document with same DOI (skip if exists)
+        cur = conn.cursor()
+        if doi:
+            cur.execute("SELECT doc_id, title FROM documents WHERE doi = %s", (doi,))
+            existing = cur.fetchone()
+            if existing:
+                result['status'] = 'skipped'
+                result['error'] = f'DOI already exists: {existing[1][:50]}...'
+                logger.info(f"Skipped (DOI exists): {title[:50]}...")
+                return result
+
+        # Check for existing document with same pdf_hash (skip if same file)
+        cur.execute("SELECT doc_id, title FROM documents WHERE pdf_hash = %s", (pdf_hash,))
+        existing = cur.fetchone()
+        if existing:
+            result['status'] = 'skipped'
+            result['error'] = f'Same PDF already ingested: {existing[1][:50]}...'
+            logger.info(f"Skipped (same file): {title[:50]}...")
+            return result
 
         # Chunk text
         chunks = chunk_text(parse_result.text)
@@ -143,19 +307,37 @@ def ingest_single_pdf(
             texts = [c['content'] for c in chunks]
             embeddings = embedder.encode(texts)
 
-        # Store in database
-        cur = conn.cursor()
+        # Store in database (cursor already created for dedup checks)
+        # Parse authors string into array (Zotero format: "LastName, First; LastName2, First2")
+        authors_array = [a.strip() for a in authors.split(';') if a.strip()] if authors else None
 
-        # Upsert document
+        # Parse year as integer
+        year_int = int(year) if year and year.isdigit() else None
+
+        # Upsert document (with full metadata)
         cur.execute("""
-            INSERT INTO documents (doc_id, title, title_hash, pdf_path, ingest_batch)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO documents (
+                doc_id, title, title_hash, doi, pdf_hash, pdf_path, ingest_batch,
+                authors, year, abstract, venue, zotero_key, source_method
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (doc_id) DO UPDATE SET
                 title = EXCLUDED.title,
+                doi = COALESCE(EXCLUDED.doi, documents.doi),
+                pdf_hash = COALESCE(EXCLUDED.pdf_hash, documents.pdf_hash),
                 pdf_path = EXCLUDED.pdf_path,
+                authors = COALESCE(EXCLUDED.authors, documents.authors),
+                year = COALESCE(EXCLUDED.year, documents.year),
+                abstract = COALESCE(EXCLUDED.abstract, documents.abstract),
+                venue = COALESCE(EXCLUDED.venue, documents.venue),
+                zotero_key = COALESCE(EXCLUDED.zotero_key, documents.zotero_key),
+                source_method = EXCLUDED.source_method,
                 updated_at = NOW()
             RETURNING doc_id
-        """, (str(doc_id), title, get_title_hash(title), str(pdf_path), batch_name))
+        """, (
+            str(doc_id), title, get_title_hash(title), doi, pdf_hash, str(pdf_path), batch_name,
+            authors_array, year_int, abstract or None, venue or None, zotero_key or None, metadata_source
+        ))
 
         # Delete old passages
         cur.execute("DELETE FROM passages WHERE doc_id = %s", (str(doc_id),))
@@ -263,20 +445,31 @@ def ingest_batch(
 
 
 def main():
+    global _zotero_metadata
+
     parser = argparse.ArgumentParser(description='Ingest PDFs into Polymath')
-    parser.add_argument('pdfs', nargs='+', help='PDF files to ingest')
+    parser.add_argument('pdfs', nargs='+', help='PDF files or directories to ingest')
     parser.add_argument('--workers', '-w', type=int, default=4, help='Parallel workers')
     parser.add_argument('--no-embeddings', action='store_true', help='Skip embedding computation')
     parser.add_argument('--no-assets', action='store_true', help='Skip asset detection')
     parser.add_argument('--batch-name', help='Name for this batch')
+    parser.add_argument('--zotero-csv', help='Zotero CSV with metadata (from prepare_zotero_ingest.py)')
+    parser.add_argument('--recursive', '-r', action='store_true', help='Recursively search directories for PDFs')
     args = parser.parse_args()
+
+    # Load Zotero metadata if provided
+    if args.zotero_csv:
+        _zotero_metadata = load_zotero_metadata(args.zotero_csv)
 
     # Expand paths
     pdf_paths = []
     for p in args.pdfs:
         path = Path(p)
         if path.is_dir():
-            pdf_paths.extend(path.glob('*.pdf'))
+            if args.recursive:
+                pdf_paths.extend(path.rglob('*.pdf'))
+            else:
+                pdf_paths.extend(path.glob('*.pdf'))
         elif path.exists():
             pdf_paths.append(path)
         else:
