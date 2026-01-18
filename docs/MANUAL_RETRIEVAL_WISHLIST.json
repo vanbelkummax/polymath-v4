@@ -1,0 +1,140 @@
+{
+  "generated_at": "2026-01-18T15:35:28.715796",
+  "influential_papers": [],
+  "missing_citations": [
+    {
+      "title": "Sudden Infant death Syndrome and Parental smoking. Best Practice Guidelines",
+      "doi": "10.1016/j",
+      "mentions": 409,
+      "citations": 196,
+      "open_access_pdf": "https://hal.archives-ouvertes.fr/hal-00977931/document"
+    },
+    {
+      "title": "Science",
+      "doi": "10.1126/science",
+      "mentions": 56,
+      "citations": 21,
+      "open_access_pdf": ""
+    },
+    {
+      "title": "Banana Ovate family protein MaOFP1 and MADS-box protein MuMADS1 antagonistically regulated banana fruit ripening",
+      "doi": "10.1371/journal",
+      "mentions": 56,
+      "citations": 4126,
+      "open_access_pdf": "https://hal.inrae.fr/hal-02625591/document"
+    },
+    {
+      "title": "Exploration of RNA outside segmented cells in spatial transcriptomics reveals extrasomatic RNA organization",
+      "doi": "10.64898/2025.12.07.692889",
+      "mentions": 46,
+      "citations": 1,
+      "open_access_pdf": ""
+    },
+    {
+      "title": "Histology-Based Virtual RNA Inference Identifies Pathways Associated with Metastasis Risk in Colorectal Cancer",
+      "doi": "10.1101/2025.04.22.25326170",
+      "mentions": 41,
+      "citations": 0,
+      "open_access_pdf": ""
+    },
+    {
+      "title": "Site-specific DNA insertion into the human genome with engineered recombinases.",
+      "doi": "10.1038/s41587-025-02895-3",
+      "mentions": 41,
+      "citations": 1,
+      "open_access_pdf": ""
+    },
+    {
+      "title": "Characterization of immune cell populations in the tumor microenvironment of colorectal cancer using high definition spatial profiling",
+      "doi": "10.1101/2024.06.04.597233",
+      "mentions": 38,
+      "citations": 71,
+      "open_access_pdf": "https://www.biorxiv.org/content/biorxiv/early/2024/06/05/2024.06.04.597233.full.pdf"
+    },
+    {
+      "title": "On metrics for subpopulation detection in single-cell and spatial omics data",
+      "doi": "10.1101/2024.11.28.625845",
+      "mentions": 38,
+      "citations": 2,
+      "open_access_pdf": ""
+    },
+    {
+      "title": "A multi-modal single-cell and spatial expression map of metastatic breast cancer biopsies across clinicopathological features",
+      "doi": "10.1038/s41591-024-03215-z",
+      "mentions": 38,
+      "citations": 41,
+      "open_access_pdf": "https://doi.org/10.1038/s41591-024-03215-z"
+    },
+    {
+      "title": "The Neuroimmune Axis in Atopic Dermatitis: From Pathogenic Mechanisms to Targeted Neuroimmunotherapy",
+      "doi": "10.2147/jir.s578036",
+      "mentions": 33,
+      "citations": 1,
+      "open_access_pdf": ""
+    },
+    {
+      "title": "Discovery and characterization of a prevalent human gut bacterial enzyme sufficient for the inactivation of a family of plant toxins",
+      "doi": "10.7554/elife.33953",
+      "mentions": 32,
+      "citations": 100,
+      "open_access_pdf": "https://doi.org/10.7554/elife.33953"
+    },
+    {
+      "title": "Optimizing Xenium In Situ data utility by quality assessment and best-practice analysis workflows",
+      "doi": "10.1038/s41592-025-02617-2",
+      "mentions": 31,
+      "citations": 87,
+      "open_access_pdf": "https://doi.org/10.1038/s41592-025-02617-2"
+    },
+    {
+      "title": "Tissue and cellular spatiotemporal dynamics in colon aging.",
+      "doi": "10.1038/s41587-025-02830-6",
+      "mentions": 31,
+      "citations": 1,
+      "open_access_pdf": ""
+    },
+    {
+      "title": "High-density spatial transcriptomics arrays for in situ tissue profiling",
+      "doi": "10.1101/563338",
+      "mentions": 30,
+      "citations": 25,
+      "open_access_pdf": "https://www.biorxiv.org/content/biorxiv/early/2019/03/13/563338.full.pdf"
+    },
+    {
+      "title": "Predicting the translation efficiency of messenger RNA in mammalian cells.",
+      "doi": "10.1038/s41587-025-02712-x",
+      "mentions": 30,
+      "citations": 13,
+      "open_access_pdf": ""
+    },
+    {
+      "title": "A Deep Gravity model for mobility flows generation",
+      "doi": "10.1038/s41467-021-26752-4",
+      "mentions": 27,
+      "citations": 232,
+      "open_access_pdf": "https://www.nature.com/articles/s41467-021-26752-4.pdf"
+    }
+  ],
+  "manual_retrieval": [
+    {
+      "doi": "10.48550/arxiv",
+      "mentions": 52,
+      "note": "Could not resolve via Semantic Scholar"
+    },
+    {
+      "doi": "10.1016/j.cell",
+      "mentions": 46,
+      "note": "Could not resolve via Semantic Scholar"
+    },
+    {
+      "doi": "10.1038/s41592-025-02926-6",
+      "mentions": 40,
+      "note": "Could not resolve via Semantic Scholar"
+    },
+    {
+      "doi": "10.1073/pnas",
+      "mentions": 34,
+      "note": "Could not resolve via Semantic Scholar"
+    }
+  ]
+}

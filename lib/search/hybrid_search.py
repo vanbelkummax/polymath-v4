@@ -2,10 +2,12 @@
 Hybrid Search for Polymath v4
 
 Combines vector similarity with BM25 for optimal retrieval.
+Includes GraphRAG query expansion via Neo4j concept graph.
 """
 
 import logging
-from typing import List, Dict, Optional, Tuple
+import re
+from typing import List, Dict, Optional, Tuple, Set
 from dataclasses import dataclass
 
 import numpy as np
@@ -15,6 +17,24 @@ from lib.config import config
 from lib.embeddings.bge_m3 import BGEEmbedder
 
 logger = logging.getLogger(__name__)
+
+# Neo4j connection (lazy loaded)
+_neo4j_driver = None
+
+
+def _get_neo4j_driver():
+    """Get or create Neo4j driver."""
+    global _neo4j_driver
+    if _neo4j_driver is None:
+        try:
+            from neo4j import GraphDatabase
+            _neo4j_driver = GraphDatabase.driver(
+                config.NEO4J_URI,
+                auth=(config.NEO4J_USER, config.NEO4J_PASSWORD)
+            )
+        except Exception as e:
+            logger.warning(f"Neo4j connection failed: {e}")
+    return _neo4j_driver
 
 
 @dataclass
@@ -50,6 +70,112 @@ class HybridSearcher:
                 logger.warning(f"Could not load reranker: {e}")
                 self.rerank_enabled = False
         return self.reranker
+
+    def _expand_query_with_graph(
+        self,
+        query: str,
+        max_expansions: int = 5,
+        min_co_occurrences: int = 3,
+        conn=None
+    ) -> Tuple[str, List[str]]:
+        """
+        Expand query using concept co-occurrence from passage_concepts table.
+
+        Finds related concepts via:
+        - Direct match to known concepts in passage_concepts
+        - Co-occurrence: concepts appearing in same passages
+
+        Args:
+            query: Original search query
+            max_expansions: Max number of expansion terms to add
+            min_co_occurrences: Minimum co-occurrence count for inclusion
+            conn: Optional database connection
+
+        Returns:
+            Tuple of (expanded_query, expansion_terms)
+        """
+        should_close = conn is None
+        if conn is None:
+            try:
+                conn = self._get_connection()
+            except Exception as e:
+                logger.warning(f"GraphRAG expansion failed (db): {e}")
+                return query, []
+
+        try:
+            # Extract query terms (normalize)
+            terms = re.findall(r'\b[a-zA-Z][a-zA-Z0-9_-]{2,}\b', query.lower())
+            terms = set(terms)
+
+            if not terms:
+                return query, []
+
+            # Build LIKE patterns for concept matching
+            patterns = []
+            for term in terms:
+                patterns.append(f"%{term}%")
+                patterns.append(f"%{term.replace('-', '_')}%")
+
+            cur = conn.cursor()
+
+            # Find concepts matching query terms and their co-occurring concepts
+            # This uses passage_concepts to find concepts that appear together
+            cur.execute("""
+                WITH query_concepts AS (
+                    -- Find concepts matching query terms
+                    SELECT DISTINCT concept_name, passage_id
+                    FROM passage_concepts
+                    WHERE concept_name ILIKE ANY(%s)
+                    LIMIT 1000
+                ),
+                co_occurring AS (
+                    -- Find concepts co-occurring in same passages
+                    SELECT
+                        pc.concept_name,
+                        pc.concept_type,
+                        COUNT(DISTINCT pc.passage_id) as co_occurrences
+                    FROM passage_concepts pc
+                    JOIN query_concepts qc ON pc.passage_id = qc.passage_id
+                    WHERE pc.concept_name NOT ILIKE ANY(%s)
+                    AND pc.confidence > 0.5
+                    GROUP BY pc.concept_name, pc.concept_type
+                    HAVING COUNT(DISTINCT pc.passage_id) >= %s
+                    ORDER BY co_occurrences DESC
+                    LIMIT %s
+                )
+                SELECT concept_name, concept_type, co_occurrences
+                FROM co_occurring
+                ORDER BY co_occurrences DESC
+            """, (patterns, patterns, min_co_occurrences, max_expansions * 2))
+
+            rows = cur.fetchall()
+
+            # Collect expansion terms with scores
+            expansion_terms = []
+            for concept_name, concept_type, count in rows:
+                # Skip very generic concepts
+                if concept_name.lower() in {'method', 'model', 'data', 'analysis', 'result', 'study'}:
+                    continue
+                expansion_terms.append(concept_name)
+                if len(expansion_terms) >= max_expansions:
+                    break
+
+            if expansion_terms:
+                # Build expanded query with OR
+                # Replace underscores with spaces for BM25
+                expanded_terms = [t.replace('_', ' ') for t in expansion_terms]
+                expanded = f"{query} OR " + " OR ".join(f'"{t}"' for t in expanded_terms)
+                logger.info(f"GraphRAG expanded: '{query}' → +{len(expansion_terms)} terms: {expansion_terms[:3]}...")
+                return expanded, expansion_terms
+
+        except Exception as e:
+            logger.warning(f"GraphRAG expansion failed: {e}")
+
+        finally:
+            if should_close and conn:
+                conn.close()
+
+        return query, []
 
     def _get_connection(self):
         return psycopg2.connect(config.POSTGRES_DSN)
@@ -155,6 +281,7 @@ class HybridSearcher:
         n: int = 20,
         vector_weight: float = 0.7,
         rerank: bool = None,
+        graph_expand: bool = False,
         conn=None
     ) -> List[SearchResult]:
         """
@@ -165,9 +292,16 @@ class HybridSearcher:
             n: Number of results
             vector_weight: Weight for vector scores (0-1)
             rerank: Whether to rerank results (default: self.rerank_enabled)
+            graph_expand: Whether to use GraphRAG query expansion via Neo4j
         """
         if rerank is None:
             rerank = self.rerank_enabled
+
+        # GraphRAG expansion
+        original_query = query
+        expansion_terms = []
+        if graph_expand:
+            query, expansion_terms = self._expand_query_with_graph(query)
 
         should_close = conn is None
         if conn is None:
@@ -176,7 +310,9 @@ class HybridSearcher:
         # Get more candidates for fusion
         k = n * 3
 
-        vector_results = self.vector_search(query, k, conn)
+        # Use original query for vector search (embeddings capture semantics)
+        # Use expanded query for BM25 (lexical expansion helps)
+        vector_results = self.vector_search(original_query, k, conn)
         bm25_results = self.bm25_search(query, k, conn)
 
         # Reciprocal Rank Fusion
