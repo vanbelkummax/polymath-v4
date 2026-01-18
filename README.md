@@ -24,8 +24,10 @@ Polymath v4 is a **polymathic knowledge system** designed to:
 | Metric | Count |
 |--------|-------|
 | Documents | 1,698 |
-| Embedded Passages | 143,103 |
-| GitHub Repos | 1,277 |
+| Paper Passages | 143,103 |
+| Repositories | 1,791 |
+| Repo Passages | 51,006 |
+| Paper-Repo Links | 423 |
 
 ---
 
