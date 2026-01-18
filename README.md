@@ -3,49 +3,12 @@
 > **A Postgres-first knowledge system for scientific papers, code repositories, and cross-domain insights.**
 
 <p align="center">
-  <img src="docs/architecture.png" alt="Polymath v4 Pipeline" width="800">
+  <img src="docs/images/architecture.png" alt="Polymath v4 Architecture" width="800">
 </p>
 
 <p align="center">
   <em>Document → Process → Store → Search: The Polymath pipeline transforms scientific papers into a searchable knowledge graph.</em>
 </p>
-
----
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           POLYMATH v4 ARCHITECTURE                          │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   ┌──────────────┐     ┌──────────────┐     ┌──────────────┐               │
-│   │   SOURCES    │     │   INGEST     │     │    STORE     │               │
-│   ├──────────────┤     ├──────────────┤     ├──────────────┤               │
-│   │ • PDFs       │────▶│ • Parse      │────▶│ • PostgreSQL │               │
-│   │ • Zotero CSV │     │ • Chunk      │     │   (pgvector) │               │
-│   │ • GitHub     │     │ • Embed      │     │ • Neo4j      │               │
-│   │ • arXiv      │     │ • Detect     │     │   (concepts) │               │
-│   └──────────────┘     └──────────────┘     └──────────────┘               │
-│                              │                     │                        │
-│                              ▼                     ▼                        │
-│                        ┌──────────────┐     ┌──────────────┐               │
-│                        │   ENRICH     │     │   SEARCH     │               │
-│                        ├──────────────┤     ├──────────────┤               │
-│                        │ • CrossRef   │     │ • Semantic   │               │
-│                        │ • OpenAlex   │     │ • BM25       │               │
-│                        │ • S2         │     │ • Reranking  │               │
-│                        └──────────────┘     └──────────────┘               │
-│                                                    │                        │
-│                                                    ▼                        │
-│                                             ┌──────────────┐               │
-│                                             │   OUTPUT     │               │
-│                                             ├──────────────┤               │
-│                                             │ • MCP Server │               │
-│                                             │ • API        │               │
-│                                             │ • CLI        │               │
-│                                             └──────────────┘               │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
 
 ## Overview
 
@@ -56,64 +19,21 @@ Polymath v4 is a **polymathic knowledge system** designed to:
 3. **Enable semantic search** using BGE-M3 embeddings stored in PostgreSQL pgvector
 4. **Build cross-domain connections** via concept extraction and Neo4j graph
 
-### Key Statistics (Live Build)
+### Key Statistics (2026-01-18)
 
 | Metric | Count |
 |--------|-------|
-| Documents | 31,000+ |
-| Embedded Passages | 53,000+ |
-| GitHub Repos | 1,980+ |
-| Concepts | 4.8M+ |
+| Documents | 1,698 |
+| Embedded Passages | 143,103 |
+| GitHub Repos | 1,277 |
 
 ---
 
 ## Three-Stage Pipeline
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         INGESTION PIPELINE                                  │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  STAGE 1: INGEST (Fast)                                                    │
-│  ══════════════════════                                                    │
-│                                                                             │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐ │
-│  │   Zotero    │    │   Parse     │    │   Chunk     │    │   Embed     │ │
-│  │   Metadata  │───▶│   PDF       │───▶│   Text      │───▶│   BGE-M3    │ │
-│  │   Waterfall │    │   + OCR     │    │   Headers   │    │   1024-dim  │ │
-│  └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘ │
-│        │                  │                  │                  │          │
-│        ▼                  ▼                  ▼                  ▼          │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐ │
-│  │   Title     │    │   DOI       │    │   50-200    │    │   Detect    │ │
-│  │   Authors   │    │   Extract   │    │   passages  │    │   Assets    │ │
-│  │   Year      │    │   + Dedup   │    │   per doc   │    │   GitHub/HF │ │
-│  └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘ │
-│                                                                             │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  STAGE 2: ENRICH (Background)                                              │
-│  ════════════════════════════                                              │
-│                                                                             │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐                    │
-│  │  CrossRef   │    │  OpenAlex   │    │  Semantic   │                    │
-│  │  Lookup     │───▶│  Citations  │───▶│  Scholar    │                    │
-│  │  + Venue    │    │  + OA URLs  │    │  + Scores   │                    │
-│  └─────────────┘    └─────────────┘    └─────────────┘                    │
-│                                                                             │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  STAGE 3: CONCEPTS (Batch)                                                 │
-│  ═════════════════════════                                                 │
-│                                                                             │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐                    │
-│  │   Gemini    │    │   Extract   │    │   Sync to   │                    │
-│  │   Batch     │───▶│   Concepts  │───▶│   Neo4j     │                    │
-│  │   API       │    │   + Types   │    │   Graph     │                    │
-│  └─────────────┘    └─────────────┘    └─────────────┘                    │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="docs/images/pipeline.png" alt="Ingestion Pipeline" width="800">
+</p>
 
 ---
 
@@ -151,27 +71,9 @@ Polymath uses a **waterfall approach** for metadata extraction, preferring riche
 
 **Strict approach:** Prefer duplicates over losing unique papers.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    DEDUPLICATION CHECKS                         │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  CHECK 1: DOI Match                                            │
-│  ─────────────────                                             │
-│  • If DOI exists in database → SKIP (definite duplicate)       │
-│                                                                 │
-│  CHECK 2: PDF Hash Match                                       │
-│  ───────────────────────                                       │
-│  • If same file content → SKIP (same PDF)                      │
-│                                                                 │
-│  CHECK 3: Title + Year + Authors                               │
-│  ──────────────────────────────                                │
-│  • If all three match → SKIP (probable duplicate)              │
-│  • Same title, different authors → INGEST (different paper)    │
-│  • Same title, different year → INGEST (different paper)       │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="docs/images/deduplication.png" alt="Deduplication Checks" width="800">
+</p>
 
 ---
 
@@ -231,43 +133,9 @@ for row in cur.fetchall():
 
 ## Database Schema
 
-```sql
-┌─────────────────────────────────────────────────────────────────┐
-│                      CORE TABLES                                │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  documents                                                      │
-│  ──────────                                                     │
-│  • doc_id (UUID, PK)                                           │
-│  • title, authors[], year, venue                               │
-│  • doi, pmid, arxiv_id (unique)                                │
-│  • abstract, pdf_path, pdf_hash                                │
-│  • zotero_key, source_method                                   │
-│  • title_hash (for dedup)                                      │
-│                                                                 │
-│  passages                                                       │
-│  ────────                                                       │
-│  • passage_id (UUID, PK)                                       │
-│  • doc_id (FK → documents)                                     │
-│  • passage_text, section, page_num                             │
-│  • embedding (vector[1024])                                    │
-│  • quality_score                                               │
-│                                                                 │
-│  paper_repos                                                    │
-│  ───────────                                                    │
-│  • doc_id (FK → documents)                                     │
-│  • repo_url, repo_owner, repo_name                             │
-│  • detection_method, confidence                                │
-│  • verified, verified_at                                       │
-│                                                                 │
-│  passage_concepts                                               │
-│  ────────────────                                               │
-│  • passage_id (FK → passages)                                  │
-│  • concept_name, concept_type                                  │
-│  • confidence, extractor_version                               │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="docs/images/schema.png" alt="Core Tables" width="800">
+</p>
 
 ---
 
