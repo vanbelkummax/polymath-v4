@@ -230,18 +230,20 @@ def check_job_status(conn) -> List[Dict]:
 def process_results(conn, job_id: str = None) -> int:
     """Process completed batch job results."""
     from google.cloud import storage
+    from google import genai
+    import re
 
     cur = conn.cursor()
 
     if job_id:
         cur.execute("""
-            SELECT job_id, gcs_output_uri FROM concept_batch_jobs
+            SELECT job_id, gcs_input_uri FROM concept_batch_jobs
             WHERE job_id = %s AND status = 'succeeded'
         """, (job_id,))
     else:
         # Get latest succeeded job
         cur.execute("""
-            SELECT job_id, gcs_output_uri FROM concept_batch_jobs
+            SELECT job_id, gcs_input_uri FROM concept_batch_jobs
             WHERE status = 'succeeded'
             ORDER BY completed_at DESC LIMIT 1
         """)
@@ -251,16 +253,39 @@ def process_results(conn, job_id: str = None) -> int:
         logger.warning("No completed jobs to process")
         return 0
 
-    job_id, output_uri = row
+    job_id, input_uri = row
+
+    # Get actual output URI from job object
+    client = genai.Client(
+        vertexai=True,
+        project=config.GCP_PROJECT,
+        location=config.GCP_LOCATION
+    )
+    job = client.batches.get(name=job_id)
+    output_uri = job.dest.gcs_uri
+
     logger.info(f"Processing results from {output_uri}")
 
-    # Download results from GCS
-    client = storage.Client()
-    bucket_name = output_uri.split('/')[2]
-    prefix = '/'.join(output_uri.split('/')[3:])
+    # Load passage mapping
+    storage_client = storage.Client()
+    bucket_name = config.GCS_BUCKET
+    bucket = storage_client.bucket(bucket_name)
 
-    bucket = client.bucket(bucket_name)
-    blobs = list(bucket.list_blobs(prefix=prefix))
+    # Extract job name from input URI to find mapping
+    # input_uri is like gs://bucket/batch_input/concepts_YYYYMMDD_HHMMSS.jsonl
+    job_name = input_uri.split('/')[-1].replace('.jsonl', '')
+    mapping_blob = bucket.blob(f"batch_input/{job_name}_mapping.json")
+
+    if not mapping_blob.exists():
+        logger.error(f"Mapping file not found: batch_input/{job_name}_mapping.json")
+        return 0
+
+    passage_mapping = json.loads(mapping_blob.download_as_text())
+    logger.info(f"Loaded mapping for {len(passage_mapping)} passages")
+
+    # Find predictions file
+    output_prefix = output_uri.replace(f'gs://{bucket_name}/', '')
+    blobs = list(bucket.list_blobs(prefix=output_prefix))
 
     concepts_added = 0
 
@@ -269,18 +294,28 @@ def process_results(conn, job_id: str = None) -> int:
             continue
 
         content = blob.download_as_text()
-        for line in content.strip().split('\n'):
+        for line_num, line in enumerate(content.strip().split('\n')):
             if not line:
                 continue
 
             try:
                 result = json.loads(line)
-                passage_id = result.get('metadata', {}).get('passage_id')
                 response = result.get('response', {})
+
+                # Get passage_id from mapping using line number
+                passage_id = passage_mapping.get(str(line_num))
+                if not passage_id:
+                    logger.debug(f"No passage_id for line {line_num}")
+                    continue
 
                 # Extract concepts from response
                 if 'candidates' in response:
                     text = response['candidates'][0]['content']['parts'][0]['text']
+
+                    # Strip markdown code blocks if present
+                    text = re.sub(r'^```json\s*', '', text.strip())
+                    text = re.sub(r'\s*```$', '', text)
+
                     concepts = json.loads(text)
 
                     for concept_type in ['methods', 'problems', 'domains', 'datasets', 'entities']:
@@ -292,11 +327,11 @@ def process_results(conn, job_id: str = None) -> int:
                                 INSERT INTO passage_concepts
                                 (passage_id, concept_name, concept_type, confidence, extractor_model, extractor_version)
                                 VALUES (%s, %s, %s, %s, %s, %s)
-                                ON CONFLICT (passage_id, concept_name) DO NOTHING
+                                ON CONFLICT (passage_id, concept_name, extractor_version) DO NOTHING
                             """, (
                                 passage_id,
                                 name.lower().strip(),
-                                concept_type.rstrip('s'),  # methods -> method
+                                concept_type[:-3] + 'y' if concept_type.endswith('ies') else concept_type.rstrip('s'),  # entities -> entity, methods -> method
                                 confidence,
                                 config.GEMINI_MODEL,
                                 'batch-v4'
@@ -304,7 +339,7 @@ def process_results(conn, job_id: str = None) -> int:
                             concepts_added += 1
 
             except Exception as e:
-                logger.debug(f"Error processing result: {e}")
+                logger.debug(f"Error processing line {line_num}: {e}")
 
     conn.commit()
 
