@@ -24,6 +24,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from psycopg2.extras import RealDictCursor
+
 from lib.config import config
 from lib.db.postgres import get_pool
 from lib.db.neo4j import get_neo4j_driver
@@ -51,7 +53,7 @@ def prune_superseded(driver):
 
     # 1. Get IDs of superseded passages from Postgres
     with pool.connection() as conn:
-        with conn.cursor() as cur:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
                 """
                 SELECT passage_id
@@ -98,7 +100,7 @@ def sync_papers(driver, incremental: bool = False):
     pool = get_pool()
 
     with pool.connection() as conn:
-        with conn.cursor() as cur:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
             if incremental:
                 cur.execute(
                     """
@@ -156,13 +158,13 @@ def sync_papers(driver, incremental: bool = False):
 
     # Update sync timestamps
     with pool.connection() as conn:
-        with conn.cursor() as cur:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
             doc_ids = [str(d["doc_id"]) for d in docs]
             cur.execute(
                 """
                 UPDATE documents
                 SET graph_synced_at = NOW()
-                WHERE doc_id = ANY(%s)
+                WHERE doc_id = ANY(%s::uuid[])
                 """,
                 (doc_ids,),
             )
@@ -178,7 +180,7 @@ def sync_passages(driver, incremental: bool = False):
     pool = get_pool()
 
     with pool.connection() as conn:
-        with conn.cursor() as cur:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Only sync active passages (not superseded)
             cur.execute(
                 """
@@ -239,12 +241,15 @@ def sync_concepts(driver):
         label = concept_type.upper()
 
         with pool.connection() as conn:
-            with conn.cursor() as cur:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                # Only get concepts from valid (non-orphaned) passages
                 cur.execute(
                     """
-                    SELECT DISTINCT concept_name
-                    FROM passage_concepts
-                    WHERE concept_type = %s
+                    SELECT DISTINCT pc.concept_name
+                    FROM passage_concepts pc
+                    JOIN passages p ON pc.passage_id = p.passage_id
+                    WHERE pc.concept_type = %s
+                    AND (p.is_superseded = FALSE OR p.is_superseded IS NULL)
                     """,
                     (concept_type,),
                 )
@@ -255,7 +260,7 @@ def sync_concepts(driver):
 
         logger.info(f"  Syncing {len(concepts)} {label} nodes...")
 
-        # Batch insert
+        # Batch insert with progress logging
         for i in range(0, len(concepts), BATCH_SIZE):
             batch = concepts[i:i + BATCH_SIZE]
 
@@ -268,6 +273,9 @@ def sync_concepts(driver):
                 names=batch,
             )
 
+            if (i + BATCH_SIZE) % 50000 == 0 or i + len(batch) == len(concepts):
+                logger.info(f"    Progress: {min(i + len(batch), len(concepts))}/{len(concepts)} {label} nodes")
+
         logger.info(f"    ✓ Synced {len(concepts)} {label} nodes")
 
 
@@ -278,16 +286,19 @@ def sync_mentions(driver):
     pool = get_pool()
 
     with pool.connection() as conn:
-        with conn.cursor() as cur:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Only get mentions from valid (non-orphaned) passages
             cur.execute(
                 """
-                SELECT passage_id, concept_name, concept_type, confidence
-                FROM passage_concepts
+                SELECT pc.passage_id, pc.concept_name, pc.concept_type, pc.confidence
+                FROM passage_concepts pc
+                JOIN passages p ON pc.passage_id = p.passage_id
+                WHERE p.is_superseded = FALSE OR p.is_superseded IS NULL
                 """
             )
             mentions = cur.fetchall()
 
-    logger.info(f"Found {len(mentions)} mentions to sync")
+    logger.info(f"Found {len(mentions)} mentions to sync (from valid passages)")
 
     # Group by concept type for efficient querying
     by_type = {}
