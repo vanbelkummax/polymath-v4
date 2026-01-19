@@ -24,3 +24,10 @@ CREATE INDEX IF NOT EXISTS idx_documents_created_at
 CREATE INDEX IF NOT EXISTS idx_pc_high_confidence
     ON passage_concepts(passage_id, concept_name)
     WHERE confidence > 0.7;
+
+-- GIN index for full-text search (BM25)
+-- Without this, to_tsvector is computed on every row at query time (~5s)
+-- With this index, BM25 queries take ~0.02s (250x faster)
+CREATE INDEX IF NOT EXISTS idx_passages_fts
+    ON passages USING gin(to_tsvector('english', passage_text))
+    WHERE is_superseded = FALSE;
