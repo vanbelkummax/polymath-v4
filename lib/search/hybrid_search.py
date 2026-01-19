@@ -11,10 +11,10 @@ from typing import List, Dict, Optional, Tuple, Set
 from dataclasses import dataclass
 
 import numpy as np
-import psycopg2
 
 from lib.config import config
 from lib.embeddings.bge_m3 import BGEEmbedder
+from lib.db.postgres import get_db_connection
 
 logger = logging.getLogger(__name__)
 
@@ -74,8 +74,8 @@ class HybridSearcher:
     def _expand_query_with_graph(
         self,
         query: str,
-        max_expansions: int = 5,
-        min_co_occurrences: int = 3,
+        max_expansions: int = None,
+        min_co_occurrences: int = None,
         conn=None
     ) -> Tuple[str, List[str]]:
         """
@@ -87,13 +87,19 @@ class HybridSearcher:
 
         Args:
             query: Original search query
-            max_expansions: Max number of expansion terms to add
-            min_co_occurrences: Minimum co-occurrence count for inclusion
+            max_expansions: Max number of expansion terms to add (default: config)
+            min_co_occurrences: Minimum co-occurrence count for inclusion (default: config)
             conn: Optional database connection
 
         Returns:
             Tuple of (expanded_query, expansion_terms)
         """
+        # Use config defaults if not specified
+        if max_expansions is None:
+            max_expansions = config.SEARCH_GRAPHRAG_MAX_EXPANSIONS
+        if min_co_occurrences is None:
+            min_co_occurrences = config.SEARCH_GRAPHRAG_MIN_COOCCURRENCE
+
         should_close = conn is None
         if conn is None:
             try:
@@ -178,7 +184,8 @@ class HybridSearcher:
         return query, []
 
     def _get_connection(self):
-        return psycopg2.connect(config.POSTGRES_DSN)
+        """Get a database connection (standalone, caller must close)."""
+        return get_db_connection()
 
     def vector_search(
         self,
@@ -279,7 +286,7 @@ class HybridSearcher:
         self,
         query: str,
         n: int = 20,
-        vector_weight: float = 0.7,
+        vector_weight: float = None,
         rerank: bool = None,
         graph_expand: bool = False,
         conn=None
@@ -290,10 +297,13 @@ class HybridSearcher:
         Args:
             query: Search query
             n: Number of results
-            vector_weight: Weight for vector scores (0-1)
+            vector_weight: Weight for vector scores (0-1), default from config
             rerank: Whether to rerank results (default: self.rerank_enabled)
             graph_expand: Whether to use GraphRAG query expansion via Neo4j
         """
+        # Use config defaults
+        if vector_weight is None:
+            vector_weight = config.SEARCH_VECTOR_WEIGHT
         if rerank is None:
             rerank = self.rerank_enabled
 
@@ -307,26 +317,27 @@ class HybridSearcher:
         if conn is None:
             conn = self._get_connection()
 
-        # Get more candidates for fusion
-        k = n * 3
+        # Get more candidates for fusion (configurable multiplier)
+        k = n * config.SEARCH_CANDIDATE_MULTIPLIER
 
         # Use original query for vector search (embeddings capture semantics)
         # Use expanded query for BM25 (lexical expansion helps)
         vector_results = self.vector_search(original_query, k, conn)
         bm25_results = self.bm25_search(query, k, conn)
 
-        # Reciprocal Rank Fusion
+        # Reciprocal Rank Fusion with configurable k parameter
+        rrf_k = config.SEARCH_RRF_K
         scores = {}
         passages = {}
 
         for i, r in enumerate(vector_results):
-            rrf_score = vector_weight / (60 + i)
+            rrf_score = vector_weight / (rrf_k + i)
             scores[r.passage_id] = scores.get(r.passage_id, 0) + rrf_score
             passages[r.passage_id] = r
 
         bm25_weight = 1 - vector_weight
         for i, r in enumerate(bm25_results):
-            rrf_score = bm25_weight / (60 + i)
+            rrf_score = bm25_weight / (rrf_k + i)
             scores[r.passage_id] = scores.get(r.passage_id, 0) + rrf_score
             if r.passage_id not in passages:
                 passages[r.passage_id] = r

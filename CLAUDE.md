@@ -2,9 +2,8 @@
 
 ## Current State: OPERATIONAL
 
-**Repository:** https://github.com/vanbelkummax/polymath-v4
-**Status:** 🟢 Core pipeline working (ingestion, search, concepts)
-**Last Updated:** 2026-01-17
+**Status:** 🟢 Production-ready (ingestion, search, concepts, repos)
+**Last Updated:** 2026-01-18
 
 ---
 
@@ -19,26 +18,9 @@ python scripts/ingest_pdf.py /path/to/paper.pdf
 # 2. Search
 python -c "from lib.search.hybrid_search import search; print(search('your query', n=5))"
 
-# 3. Extract concepts (batch)
-python scripts/batch_concepts.py --submit --limit 100
-python scripts/batch_concepts.py --status
+# 3. System health
+python scripts/system_report.py --quick
 ```
-
----
-
-## Skills (Use These!)
-
-Located in `skills/` - load before starting tasks:
-
-| Skill | When to Use |
-|-------|-------------|
-| `polymath-pdf-ingestion` | Ingesting PDFs (single or batch) |
-| `polymath-batch-concepts` | Extracting concepts via Gemini batch API |
-| `polymath-search` | Searching with hybrid search, warmup |
-| `polymath-smoke-test` | Quick E2E verification |
-| `polymath-system-analysis` | Full system health check |
-
-**Example:** Before ingesting papers, read `skills/polymath-pdf-ingestion.md`
 
 ---
 
@@ -47,45 +29,47 @@ Located in `skills/` - load before starting tasks:
 ```
 polymath-v4/
 ├── lib/
-│   ├── config.py              # Central config, loads .env
+│   ├── config.py              # Central config (thread-safe)
+│   ├── db/postgres.py         # Connection pool (thread-safe)
 │   ├── embeddings/bge_m3.py   # BGE-M3 embeddings (thread-safe)
 │   ├── search/hybrid_search.py # Vector + BM25 + reranking
-│   ├── ingest/
-│   │   ├── pdf_parser.py      # PyMuPDF text extraction
-│   │   ├── chunking.py        # Text chunking
-│   │   └── asset_detector.py  # GitHub/HF/citation detection
-│   └── db/postgres.py         # Database connections
-├── scripts/
-│   ├── ingest_pdf.py          # PDF ingestion CLI
-│   ├── batch_concepts.py      # Gemini batch concept extraction
-│   ├── system_report.py       # Health check
-│   └── ...
-├── schema/                    # PostgreSQL migrations
-├── skills/                    # Operational skills (READ THESE)
-└── tests/                     # Test suite
+│   └── ingest/
+│       ├── pdf_parser.py      # PyMuPDF text extraction
+│       ├── chunking.py        # Header-aware chunking
+│       └── asset_detector.py  # GitHub/HF/citation detection
+├── scripts/                   # CLI tools
+├── schema/                    # PostgreSQL migrations (001-008)
+├── dashboard/                 # Streamlit UI
+└── tests/                     # 26 tests
 ```
 
 ---
 
-## Environment Setup
+## Configuration
 
-Copy `.env.example` to `.env` and fill in:
+### Required Environment Variables
 
 ```bash
-# Required
+# .env file
 POSTGRES_DSN=dbname=polymath user=polymath host=/var/run/postgresql
 NEO4J_URI=bolt://localhost:7687
-NEO4J_PASSWORD=your_password_here
+NEO4J_PASSWORD=polymathic2026
 
 # Google Cloud (for batch concepts)
-GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
-GCP_PROJECT=your-gcp-project-id
-GCP_LOCATION=us-central1
-GCS_BUCKET=your-bucket-name
+GOOGLE_APPLICATION_CREDENTIALS=/home/user/.gcp/service-account.json
+GCP_PROJECT=fifth-branch-483806-m1
+GCS_BUCKET=polymath-batch-jobs
+```
 
-# Optional
-GITHUB_TOKEN=ghp_xxx
-HF_TOKEN=hf_xxx
+### Search Tuning (Optional)
+
+```bash
+# These can be set in .env or as environment variables
+SEARCH_VECTOR_WEIGHT=0.7        # 0-1, higher = more semantic
+SEARCH_CANDIDATE_MULTIPLIER=3   # Candidates = n * multiplier
+SEARCH_RRF_K=60                 # RRF fusion constant
+SEARCH_GRAPHRAG_MAX_EXPANSIONS=5
+SEARCH_GRAPHRAG_MIN_COOCCURRENCE=3
 ```
 
 ---
@@ -98,71 +82,89 @@ HF_TOKEN=hf_xxx
 python scripts/ingest_pdf.py paper.pdf
 
 # Batch with parallel workers
-python scripts/ingest_pdf.py /path/to/*.pdf --workers 2
+python scripts/ingest_pdf.py /path/to/*.pdf --workers 4
 
-# Skip embeddings (faster, for testing)
-python scripts/ingest_pdf.py paper.pdf --no-embeddings
+# With Zotero metadata
+python scripts/ingest_pdf.py paper.pdf --zotero-csv metadata.csv
 ```
 
 ### Search
 ```python
 from lib.search.hybrid_search import warmup, search
 
-# Fast repeated queries (warmup once)
+# Fast repeated queries (warmup once at startup)
 searcher = warmup(rerank=True)
 results = searcher.hybrid_search("spatial transcriptomics", n=10)
 
-# Quick one-off search
+# With GraphRAG expansion
+results = searcher.hybrid_search("gene expression", graph_expand=True)
+
+# Override default weights
+results = searcher.hybrid_search("query", vector_weight=0.8)
+
+# Quick one-off
 results = search("gene expression prediction", n=5)
 ```
 
-### Concept Extraction
+### Concepts
 ```bash
-# Check pending passages
-python scripts/batch_concepts.py
-
-# Submit batch job (50-500 passages recommended)
 python scripts/batch_concepts.py --submit --limit 100
-
-# Check job status
 python scripts/batch_concepts.py --status
-
-# Process completed jobs
 python scripts/batch_concepts.py --process
 ```
 
-### System Health
+### Discovery
 ```bash
-python scripts/system_report.py --quick
+# Find papers via CORE API
+python scripts/discover_papers.py "spatial transcriptomics" --auto-ingest
+
+# Gap analysis
+python scripts/active_librarian.py --analyze-gaps
 ```
 
 ---
 
 ## Database
 
-### Quick Counts
+### Quick Stats
 ```sql
 SELECT
     (SELECT COUNT(*) FROM documents) as docs,
     (SELECT COUNT(*) FROM passages) as passages,
     (SELECT COUNT(embedding) FROM passages) as embedded,
-    (SELECT COUNT(*) FROM passage_concepts) as concepts;
+    (SELECT COUNT(*) FROM passage_concepts) as concepts,
+    (SELECT COUNT(*) FROM repositories) as repos;
 ```
 
-### Recent Ingestion
-```sql
-SELECT title, created_at
-FROM documents
-WHERE created_at > NOW() - INTERVAL '1 hour'
-ORDER BY created_at DESC;
-```
-
-### Core Schema
+### Schema (key tables)
 ```sql
 documents (doc_id, title, authors, year, doi, pmid, title_hash)
 passages (passage_id, doc_id, passage_text, embedding, is_superseded)
 passage_concepts (passage_id, concept_name, concept_type, confidence)
+repositories (repo_id, url, name, stars, language)
+repo_passages (passage_id, repo_id, passage_text, embedding)
 ```
+
+### Performance Indexes
+```sql
+-- Partial indexes for active passages (schema/008)
+idx_passages_active              -- Non-superseded passages
+idx_passages_active_embedding    -- Vector search on active only
+idx_documents_created_at         -- Recent docs
+idx_pc_high_confidence           -- High-confidence concepts
+```
+
+---
+
+## Thread Safety
+
+All core modules are thread-safe:
+
+| Module | Mechanism |
+|--------|-----------|
+| `db/postgres.py` | Connection pool with `_pool_lock` |
+| `embeddings/bge_m3.py` | `_model_lock` + `_encode_lock` |
+| `search/hybrid_search.py` | Uses pooled connections |
 
 ---
 
@@ -170,93 +172,91 @@ passage_concepts (passage_id, concept_name, concept_type, confidence)
 
 | Component | Model | Notes |
 |-----------|-------|-------|
-| Embeddings | BGE-M3 (local GPU) | 1024-dim, thread-safe |
-| Concepts | gemini-2.5-flash-lite | Batch API, 50% cheaper |
-| Reranking | bge-reranker-v2-m3 | Optional, improves relevance |
+| Embeddings | BGE-M3 | 1024-dim, local GPU |
+| Concepts | gemini-2.5-flash-lite | Batch API (50% cheaper) |
+| Reranking | bge-reranker-v2-m3 | Optional cross-encoder |
 
 ---
 
-## Performance Notes
+## Performance
 
 ### Search Latency
-- **First query:** ~100s (model loading)
-- **With warmup:** ~6s warmup, then ~7s per query
-- **Without reranking:** ~2s per query
+- **Cold start:** ~100s (model loading)
+- **With warmup:** ~6s warmup, ~7s/query
+- **Without reranking:** ~2s/query
 
-### Ingestion Throughput
+### Ingestion
 - **Single PDF:** ~10s (with embeddings)
-- **Batch (2 workers):** ~8s per PDF
-- **GPU bound:** RTX 5090 handles ~100 passages/sec
+- **Batch (4 workers):** ~3s per PDF
+- **GPU:** RTX 5090, ~100 passages/sec
+
+---
+
+## Testing
+
+```bash
+# Run all tests
+python -m pytest tests/ -v
+
+# Quick import check
+python -c "from lib.config import config; print('✓')"
+python -c "from lib.db.postgres import check_health; print(check_health())"
+python -c "from lib.search.hybrid_search import HybridSearcher; print('✓')"
+```
 
 ---
 
 ## Troubleshooting
 
-### "Cannot copy out of meta tensor"
-Fixed in current version. Use `--workers 1` if issue persists.
-
-### Batch job fails
-Check JSONL format - must have `"request"` wrapper. Current version is fixed.
-
 ### Search returns nothing
 ```bash
-# Check embeddings exist
 psql -U polymath -d polymath -c "SELECT COUNT(embedding) FROM passages;"
 ```
 
 ### Slow first query
-Use `warmup()` at application start:
 ```python
 from lib.search.hybrid_search import warmup
-searcher = warmup()  # Do this once at startup
+searcher = warmup()  # Call once at startup
+```
+
+### Connection issues
+```python
+from lib.db.postgres import check_health
+print(check_health())  # Should show status: healthy
 ```
 
 ---
 
-## Development
+## Migrations
 
-### Run Tests
+Run in order if setting up fresh:
 ```bash
-python -c "from lib.config import config; print('✓ Config')"
-python -c "from lib.embeddings.bge_m3 import BGEEmbedder; print('✓ Embedder')"
-python -c "from lib.search.hybrid_search import HybridSearcher; print('✓ Search')"
-```
-
-### Commit Convention
-```bash
-git add -A
-git commit -m "fix: description of fix"
-git push origin master
+psql -U polymath -d polymath -f schema/001_core.sql
+psql -U polymath -d polymath -f schema/002_concepts.sql
+psql -U polymath -d polymath -f schema/003_code.sql
+psql -U polymath -d polymath -f schema/006_advanced.sql
+psql -U polymath -d polymath -f schema/007_repositories.sql
+psql -U polymath -d polymath -f schema/008_performance_indexes.sql
 ```
 
 ---
 
-## Session Checklist
+## Current Stats (2026-01-18)
 
-1. ☐ Check batch job status: `python scripts/batch_concepts.py --status`
-2. ☐ Run smoke test: Read `skills/polymath-smoke-test.md`
-3. ☐ Review pending tasks in this file
-4. ☐ Commit and push changes
-
----
-
-## Pending Tasks
-
-| Task | Priority | Notes |
-|------|----------|-------|
-| Process batch concept results | High | When job completes |
-| Add --process implementation | High | Parse Gemini batch output |
-| Fix remaining FIX_ALL_ISSUES.md items | Medium | Schema alignment |
-| Add test suite | Medium | Basic import/integration tests |
-| GitHub ingestion | Low | Queue processing |
+| Metric | Count |
+|--------|-------|
+| Documents | 1,701 |
+| Passages | 143,103 |
+| Concepts | 4,829,145 |
+| Repositories | 1,791 |
 
 ---
 
-## Related Resources
+## Related Files
 
 | Resource | Location |
 |----------|----------|
+| Main config | `lib/config.py` |
+| Search tuning | Environment variables |
 | Skills | `skills/` directory |
-| Test Plan | `TEST_PLAN.md` |
-| Architecture | `ARCHITECTURE.md` |
-| Fix List | `FIX_ALL_ISSUES.md` |
+| Dashboard | `streamlit run dashboard/app.py` |

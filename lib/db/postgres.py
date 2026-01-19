@@ -131,13 +131,14 @@ class ConnectionPool:
         logger.info("Connection pool closed")
 
 
-# Global connection pool
+# Global connection pool with thread-safe initialization
 _pool: Optional[ConnectionPool] = None
+_pool_lock = threading.Lock()
 
 
 def get_pool(min_size: int = None, max_size: int = None) -> ConnectionPool:
     """
-    Get or create the global connection pool.
+    Get or create the global connection pool (thread-safe).
 
     Args:
         min_size: Override minimum connections (default: PG_POOL_MIN)
@@ -148,16 +149,23 @@ def get_pool(min_size: int = None, max_size: int = None) -> ConnectionPool:
     """
     global _pool
 
-    if _pool is None:
-        min_size = min_size if min_size is not None else config.PG_POOL_MIN
-        max_size = max_size if max_size is not None else config.PG_POOL_MAX
+    # Fast path: pool already exists
+    if _pool is not None:
+        return _pool
 
-        logger.info(f"Creating Postgres connection pool (min={min_size}, max={max_size})")
-        _pool = ConnectionPool(
-            config.POSTGRES_DSN,
-            min_size=min_size,
-            max_size=max_size,
-        )
+    # Slow path: need to create pool (with lock for thread safety)
+    with _pool_lock:
+        # Double-check after acquiring lock
+        if _pool is None:
+            min_size = min_size if min_size is not None else config.PG_POOL_MIN
+            max_size = max_size if max_size is not None else config.PG_POOL_MAX
+
+            logger.info(f"Creating Postgres connection pool (min={min_size}, max={max_size})")
+            _pool = ConnectionPool(
+                config.POSTGRES_DSN,
+                min_size=min_size,
+                max_size=max_size,
+            )
 
     return _pool
 
@@ -303,31 +311,33 @@ def check_health() -> Dict[str, Any]:
 
 
 def close_pool() -> None:
-    """Close the connection pool."""
+    """Close the connection pool (thread-safe)."""
     global _pool
-    if _pool is not None:
-        _pool.close()
-        _pool = None
-        logger.info("Postgres connection pool closed")
+    with _pool_lock:
+        if _pool is not None:
+            _pool.close()
+            _pool = None
+            logger.info("Postgres connection pool closed")
 
 
 def configure_for_batch_worker() -> None:
     """
-    Configure minimal connection pool for batch worker processes.
+    Configure minimal connection pool for batch worker processes (thread-safe).
 
     IMPORTANT: Call this at the start of batch scripts to prevent
     connection exhaustion when running multiple workers.
     """
     global _pool
 
-    if _pool is not None:
-        logger.warning("Pool already initialized, skipping batch configuration")
-        return
+    with _pool_lock:
+        if _pool is not None:
+            logger.warning("Pool already initialized, skipping batch configuration")
+            return
 
-    # Force minimal pool for batch workers
-    logger.info("Configuring minimal connection pool for batch worker (1 connection)")
-    _pool = ConnectionPool(
-        config.POSTGRES_DSN,
-        min_size=1,
-        max_size=1,
-    )
+        # Force minimal pool for batch workers
+        logger.info("Configuring minimal connection pool for batch worker (1 connection)")
+        _pool = ConnectionPool(
+            config.POSTGRES_DSN,
+            min_size=1,
+            max_size=1,
+        )

@@ -65,6 +65,13 @@ class Config:
     MAX_PASSAGE_LENGTH: int = 2000
     CHUNK_OVERLAP: int = 200
 
+    # Search Parameters
+    SEARCH_VECTOR_WEIGHT: float = float(os.environ.get("SEARCH_VECTOR_WEIGHT", "0.7"))
+    SEARCH_CANDIDATE_MULTIPLIER: int = int(os.environ.get("SEARCH_CANDIDATE_MULTIPLIER", "3"))
+    SEARCH_RRF_K: int = int(os.environ.get("SEARCH_RRF_K", "60"))
+    SEARCH_GRAPHRAG_MAX_EXPANSIONS: int = int(os.environ.get("SEARCH_GRAPHRAG_MAX_EXPANSIONS", "5"))
+    SEARCH_GRAPHRAG_MIN_COOCCURRENCE: int = int(os.environ.get("SEARCH_GRAPHRAG_MIN_COOCCURRENCE", "3"))
+
     # Database Pool
     PG_POOL_MIN: int = int(os.environ.get("PG_POOL_MIN", "2"))
     PG_POOL_MAX: int = int(os.environ.get("PG_POOL_MAX", "10"))
