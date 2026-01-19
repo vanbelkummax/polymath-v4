@@ -254,6 +254,47 @@ LIMIT 10;
 "
 ```
 
+## Expanding the Knowledge Base
+
+When polymathic fields are underrepresented, use waterfall acquisition:
+
+```bash
+cd /home/user/polymath-v4
+
+# Check current field coverage
+python scripts/harvest_polymathic.py --list
+
+# Harvest a specific underrepresented field (papers + repos)
+python scripts/waterfall_acquire.py --polymathic --field tda
+
+# Harvest ALL underrepresented polymathic fields
+nohup python scripts/waterfall_acquire.py --polymathic --all > /tmp/polymathic_harvest.log 2>&1 &
+
+# Check what needs manual retrieval
+python scripts/waterfall_acquire.py --show-manual
+
+# Fill citation network gaps (papers cited but missing)
+python scripts/fill_citation_gaps.py --analyze
+python scripts/fill_citation_gaps.py --fetch --limit 30
+```
+
+### Waterfall Acquisition Order
+1. **CORE API** - Open access aggregator
+2. **Unpaywall** - OA link finder by DOI
+3. **arXiv** - Direct preprint access
+4. **Semantic Scholar** - OA links + metadata
+5. **→ Manual list** - If all fail, saved for you to retrieve
+
+### After Harvest
+New papers automatically trigger:
+- GitHub repo discovery from paper text
+- Repo README/docstring indexing
+- Concept extraction (via batch job)
+
+### Manual Retrieval List
+Papers that couldn't be auto-acquired are saved to:
+`/home/user/polymath-v4/data/manual_retrieval_needed.jsonl`
+
 ## Integration with Other Skills
 
 - **polymath-research-synthesis**: After bridging, synthesize findings
