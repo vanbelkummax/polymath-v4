@@ -74,6 +74,27 @@ CURATED_REPOS = [
     'BayraktarLab/cell2location',
     'almaan/stereoscope',
 
+    # Cell-Cell Interaction
+    'sqjin/CellChat',
+    'Teichlab/cellphonedb',
+    'saezlab/liana-py',
+    'icbi-lab/liana',
+
+    # Spatial Autocorrelation / Stats
+    'xzhoulab/SPARK',
+    'JEFworks-Lab/STdeconvolve',
+    'Teichlab/SpatialDE',
+    'MarioniLab/SpatialDE2',
+
+    # Xenium / 10x
+    '10XGenomics/xeniumranger',
+    'pachterlab/monod',
+
+    # Deconvolution
+    'broadinstitute/Tangram',
+    'MarcElosworthy/SpotClean',
+    'drighelli/SpatialExperiment',
+
     # ST Prediction
     'mahmoodlab/HIPT',
     'mahmoodlab/CLAM',
