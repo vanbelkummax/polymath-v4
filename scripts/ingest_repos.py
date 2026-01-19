@@ -119,6 +119,14 @@ CURATED_REPOS = [
     'numpy/numpy',
     'pandas-dev/pandas',
     'scikit-learn/scikit-learn',
+
+    # Agentic Memory
+    'mem0ai/mem0',
+    'Dao-AILab/flash-attention',
+    'letta-ai/letta',
+    'memvid/memvid',
+    'MemoriLabs/Memori',
+    'steveyegge/beads',
 ]
 
 
