@@ -2,6 +2,9 @@
 """
 Waterfall paper acquisition - tries multiple sources until success.
 
+NOTE: Run with python -u for unbuffered output:
+    python -u scripts/waterfall_acquire.py --polymathic --all
+
 Sources (in order):
 1. CORE API (open access aggregator)
 2. Unpaywall (OA link finder)
@@ -29,6 +32,10 @@ from pathlib import Path
 from urllib.parse import quote
 
 import requests
+
+# Force unbuffered output
+sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', buffering=1)
+sys.stderr = os.fdopen(sys.stderr.fileno(), 'w', buffering=1)
 
 # Add lib to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
