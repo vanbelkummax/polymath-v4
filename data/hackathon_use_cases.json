@@ -1,0 +1,354 @@
+{
+  "meta": {
+    "created": "2026-01-19",
+    "purpose": "Pre-made use cases for spatial multimodal hackathon",
+    "usage": "Claude loads this at hackathon start for instant scenario handling"
+  },
+
+  "use_cases": {
+    "gene_expression_prediction": {
+      "description": "Predict gene expression from H&E histology images",
+      "likelihood": "very_high",
+      "quick_queries": [
+        "python scripts/q.py 'gene expression prediction histology H&E' -n 15",
+        "python scripts/q.py 'HisToGene ST-Net Img2ST benchmark' -n 10",
+        "python scripts/q.py 'vision transformer gene expression' --code"
+      ],
+      "sota_methods": {
+        "HisToGene": {"year": 2022, "approach": "CNN + attention", "repo": "maxpmx/HisToGene"},
+        "ST-Net": {"year": 2020, "approach": "DenseNet encoder", "repo": "bryanhe/ST-Net"},
+        "Img2ST": {"year": 2024, "approach": "Multimodal transformer"},
+        "HEST": {"year": 2024, "approach": "Benchmark + foundation", "repo": "mahmoodlab/HEST"},
+        "tHisToGene": {"year": 2023, "approach": "Transformer-based"}
+      },
+      "architecture_choices": {
+        "encoder": ["ResNet50", "ViT", "UNI", "CTransPath", "CONCH"],
+        "decoder": ["MLP", "Transformer decoder", "Cross-attention"],
+        "loss": ["MSE", "Poisson NLL", "Cosine + MSE", "ZINB"]
+      },
+      "code_template": "# Quick start\nimport torch\nimport torchvision.models as models\n\nclass GenePredictor(torch.nn.Module):\n    def __init__(self, n_genes=1000):\n        super().__init__()\n        self.encoder = models.resnet50(pretrained=True)\n        self.encoder.fc = torch.nn.Linear(2048, n_genes)\n    \n    def forward(self, x):\n        return self.encoder(x)",
+      "key_decisions": [
+        "How many genes to predict? (top 1000 variable, all 20k, or specific panel)",
+        "Patch size? (224x224 standard, 256x256, or multi-scale)",
+        "Single spot or neighborhood context?",
+        "Loss function for count data?"
+      ],
+      "polymathic_angles": [
+        "Optimal transport for aligning image patches to expression profiles",
+        "Compressed sensing for sparse gene prediction",
+        "Information theory: mutual information between image features and genes"
+      ]
+    },
+
+    "cell_type_deconvolution": {
+      "description": "Infer cell type proportions from spot-level expression or images",
+      "likelihood": "high",
+      "quick_queries": [
+        "python scripts/q.py 'spatial deconvolution cell type proportion' -n 15",
+        "python scripts/q.py 'cell2location RCTD stereoscope' -n 10",
+        "python scripts/q.py 'image-based cell type classification' -n 10"
+      ],
+      "sota_methods": {
+        "cell2location": {"year": 2022, "approach": "Bayesian", "repo": "BayraktarLab/cell2location"},
+        "RCTD": {"year": 2021, "approach": "Reference-based", "repo": "dmcable/spacexr"},
+        "Tangram": {"year": 2021, "approach": "Optimal transport", "repo": "broadinstitute/Tangram"},
+        "stereoscope": {"year": 2020, "approach": "Probabilistic"},
+        "CARD": {"year": 2022, "approach": "Reference-free"}
+      },
+      "architecture_choices": {
+        "with_reference": ["cell2location", "RCTD", "Tangram"],
+        "reference_free": ["CARD", "STdeconvolve"],
+        "image_based": ["CNN classifier", "Cell segmentation + typing"]
+      },
+      "key_decisions": [
+        "Do we have single-cell reference data?",
+        "Image-based or expression-based deconvolution?",
+        "Spot-level or sub-spot resolution?"
+      ],
+      "polymathic_angles": [
+        "Blind source separation (signal processing) for unmixing",
+        "Game theory: cell types as competing populations",
+        "Optimal transport for mapping reference to spatial"
+      ]
+    },
+
+    "spatial_domain_identification": {
+      "description": "Identify tissue regions/domains from spatial data",
+      "likelihood": "high",
+      "quick_queries": [
+        "python scripts/q.py 'spatial domain clustering tissue region' -n 15",
+        "python scripts/q.py 'SpaGCN STAGATE BayesSpace' -n 10",
+        "python scripts/q.py 'graph neural network spatial clustering' -n 10"
+      ],
+      "sota_methods": {
+        "SpaGCN": {"year": 2021, "approach": "GCN + histology", "repo": "jianhuupenn/SpaGCN"},
+        "STAGATE": {"year": 2022, "approach": "Graph attention", "repo": "QIFEIDKN/STAGATE"},
+        "BayesSpace": {"year": 2021, "approach": "Bayesian clustering"},
+        "stLearn": {"year": 2020, "approach": "SME normalization"},
+        "GraphST": {"year": 2023, "approach": "Contrastive graph learning"}
+      },
+      "architecture_choices": {
+        "graph_based": ["GCN", "GAT", "GraphSAGE"],
+        "image_based": ["U-Net segmentation", "SAM"],
+        "hybrid": ["SpaGCN (expression + image)"]
+      },
+      "key_decisions": [
+        "Use histology image, expression, or both?",
+        "Fixed number of clusters or adaptive?",
+        "How to define spatial neighbors (k-NN, radius, Delaunay)?"
+      ],
+      "polymathic_angles": [
+        "Persistent homology for topological domain boundaries",
+        "Phase transitions (physics) for domain formation",
+        "Community detection from network science"
+      ]
+    },
+
+    "multimodal_integration": {
+      "description": "Integrate multiple data modalities (H&E, expression, spatial)",
+      "likelihood": "very_high",
+      "quick_queries": [
+        "python scripts/q.py 'multimodal fusion spatial transcriptomics' -n 15",
+        "python scripts/q.py 'cross-modal attention image gene' -n 10",
+        "python scripts/q.py 'CLIP contrastive histology' -n 10"
+      ],
+      "sota_methods": {
+        "MUSE": {"year": 2022, "approach": "Multimodal embedding"},
+        "SpatialGlue": {"year": 2023, "approach": "Graph + attention"},
+        "PASTE": {"year": 2022, "approach": "Optimal transport alignment", "repo": "raphael-group/paste"},
+        "MultiVI": {"year": 2023, "approach": "VAE-based integration"}
+      },
+      "fusion_strategies": {
+        "early": "Concatenate raw features → joint encoder",
+        "late": "Separate encoders → merge predictions",
+        "cross_attention": "Attend between modality embeddings",
+        "contrastive": "CLIP-style alignment in shared space",
+        "optimal_transport": "Align distributions across modalities"
+      },
+      "code_template": "# Cross-attention fusion\nclass CrossModalFusion(nn.Module):\n    def __init__(self, dim=512, heads=8):\n        super().__init__()\n        self.cross_attn = nn.MultiheadAttention(dim, heads)\n    \n    def forward(self, img_feat, expr_feat):\n        # img attends to expression\n        fused, _ = self.cross_attn(img_feat, expr_feat, expr_feat)\n        return fused",
+      "key_decisions": [
+        "Early vs late vs cross-attention fusion?",
+        "Shared vs separate encoders?",
+        "How to handle missing modalities?",
+        "Alignment before or during fusion?"
+      ],
+      "polymathic_angles": [
+        "Optimal transport (Wasserstein) for distribution alignment",
+        "Category theory: functors between modality spaces",
+        "Information bottleneck for compression"
+      ]
+    },
+
+    "foundation_model_finetuning": {
+      "description": "Fine-tune pathology foundation models for spatial tasks",
+      "likelihood": "high",
+      "quick_queries": [
+        "python scripts/q.py 'foundation model pathology UNI CONCH' -n 15",
+        "python scripts/q.py 'pretrained histology encoder fine-tune' -n 10",
+        "python scripts/q.py 'self-supervised learning pathology' -n 10"
+      ],
+      "foundation_models": {
+        "UNI": {"params": "300M", "pretraining": "100k WSIs", "org": "mahmoodlab"},
+        "CONCH": {"params": "ViT-B", "pretraining": "Contrastive image-text", "org": "mahmoodlab"},
+        "CTransPath": {"params": "ViT", "pretraining": "Contrastive", "org": "Xiyue-Wang"},
+        "Phikon": {"params": "ViT-B", "pretraining": "DINOv2 on path", "org": "owkin"},
+        "HIPT": {"params": "Hierarchical ViT", "pretraining": "DINO", "org": "mahmoodlab"}
+      },
+      "finetuning_strategies": {
+        "linear_probe": "Freeze encoder, train head only",
+        "full_finetune": "Train all parameters (need more data)",
+        "lora": "Low-rank adaptation (efficient)",
+        "adapter": "Add small trainable modules"
+      },
+      "code_template": "# LoRA fine-tuning\nfrom peft import LoraConfig, get_peft_model\n\nconfig = LoraConfig(\n    r=16,\n    lora_alpha=32,\n    target_modules=['q_proj', 'v_proj'],\n    lora_dropout=0.1\n)\nmodel = get_peft_model(base_model, config)",
+      "key_decisions": [
+        "Which foundation model? (UNI best performance, CTransPath easiest access)",
+        "Linear probe vs full fine-tune vs LoRA?",
+        "How much labeled data do we have?",
+        "Task-specific head architecture?"
+      ]
+    },
+
+    "survival_outcome_prediction": {
+      "description": "Predict patient outcomes from spatial features",
+      "likelihood": "medium",
+      "quick_queries": [
+        "python scripts/q.py 'survival prediction spatial transcriptomics' -n 15",
+        "python scripts/q.py 'Cox regression deep learning pathology' -n 10",
+        "python scripts/q.py 'prognostic biomarker spatial' -n 10"
+      ],
+      "sota_methods": {
+        "CLAM": {"year": 2021, "approach": "Attention MIL", "repo": "mahmoodlab/CLAM"},
+        "TransMIL": {"year": 2021, "approach": "Transformer MIL"},
+        "HIPT": {"year": 2022, "approach": "Hierarchical attention"},
+        "Porpoise": {"year": 2022, "approach": "Multimodal survival"}
+      },
+      "architecture_choices": {
+        "mil": ["CLAM", "TransMIL", "ABMIL"],
+        "graph": ["PatchGCN", "HEAT"],
+        "hierarchical": ["HIPT", "H2-MIL"]
+      },
+      "loss_functions": {
+        "cox": "nn.functional.nll_loss with Cox partial likelihood",
+        "ranking": "Concordance-based ranking loss",
+        "discrete": "Discrete-time survival (classification)"
+      },
+      "key_decisions": [
+        "Cox loss vs ranking loss vs discrete time?",
+        "Patch-level or slide-level features?",
+        "Include spatial features or just expression?"
+      ]
+    },
+
+    "cell_segmentation": {
+      "description": "Segment individual cells/nuclei from histology",
+      "likelihood": "medium",
+      "quick_queries": [
+        "python scripts/q.py 'cell segmentation nuclei histology' -n 15",
+        "python scripts/q.py 'Cellpose StarDist HoVer-Net' -n 10",
+        "python scripts/q.py 'instance segmentation pathology' -n 10"
+      ],
+      "sota_methods": {
+        "Cellpose": {"year": 2020, "approach": "Gradient flows", "repo": "mouseland/cellpose"},
+        "StarDist": {"year": 2018, "approach": "Star-convex polygons", "repo": "stardist/stardist"},
+        "HoVer-Net": {"year": 2019, "approach": "Horizontal-vertical maps"},
+        "SAM": {"year": 2023, "approach": "Foundation model", "repo": "facebookresearch/segment-anything"}
+      },
+      "code_template": "# Cellpose\nfrom cellpose import models\nmodel = models.Cellpose(gpu=True, model_type='nuclei')\nmasks, flows, styles, diams = model.eval(images, diameter=None, channels=[0,0])",
+      "key_decisions": [
+        "Nuclei only or whole cells?",
+        "Instance or semantic segmentation?",
+        "Pre-trained or fine-tune on your data?"
+      ]
+    },
+
+    "batch_effect_correction": {
+      "description": "Remove technical variation across samples/batches",
+      "likelihood": "medium",
+      "quick_queries": [
+        "python scripts/q.py 'batch effect correction spatial transcriptomics' -n 15",
+        "python scripts/q.py 'Harmony scVI integration' -n 10",
+        "python scripts/q.py 'stain normalization histology' -n 10"
+      ],
+      "methods": {
+        "expression": {
+          "Harmony": "Fast, PCA-based",
+          "scVI": "VAE-based, scalable",
+          "Combat": "Classic empirical Bayes",
+          "Scanorama": "Panorama stitching approach"
+        },
+        "histology": {
+          "Macenko": "Stain vector estimation",
+          "Vahadane": "Sparse NMF stain separation",
+          "StainNet": "Deep learning normalization"
+        }
+      },
+      "key_decisions": [
+        "Correct before or after main analysis?",
+        "Preserve biological variation?",
+        "Image normalization vs expression normalization?"
+      ]
+    },
+
+    "data_augmentation": {
+      "description": "Augment training data for better generalization",
+      "likelihood": "high",
+      "augmentation_strategies": {
+        "geometric": ["rotation (0/90/180/270)", "flip (h/v)", "random crop", "elastic deform"],
+        "color": ["brightness/contrast jitter", "hue/saturation", "stain augmentation"],
+        "spatial": ["coordinate noise", "spot dropout", "neighborhood shuffling"],
+        "expression": ["gene dropout", "Gaussian noise", "mixup"]
+      },
+      "code_template": "# Albumentations for histology\nimport albumentations as A\n\ntransform = A.Compose([\n    A.RandomRotate90(),\n    A.Flip(),\n    A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),\n    A.GaussianBlur(blur_limit=3, p=0.3),\n    A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])\n])",
+      "key_decisions": [
+        "How aggressive? (depends on dataset size)",
+        "Stain augmentation for histology?",
+        "Augment spatial coordinates?"
+      ]
+    },
+
+    "benchmark_evaluation": {
+      "description": "Evaluate model against standard benchmarks",
+      "likelihood": "very_high",
+      "metrics": {
+        "gene_prediction": {
+          "PCC": "Pearson correlation per gene, then average",
+          "SSIM": "Structural similarity for spatial patterns",
+          "MAE": "Mean absolute error",
+          "R2": "Coefficient of determination"
+        },
+        "clustering": {
+          "ARI": "Adjusted Rand Index",
+          "NMI": "Normalized Mutual Information",
+          "Silhouette": "Cluster separation quality"
+        },
+        "survival": {
+          "C-index": "Concordance index",
+          "IBS": "Integrated Brier Score"
+        }
+      },
+      "datasets": {
+        "HEST-1k": "1000 Visium samples with benchmarks",
+        "SpatialLIBD": "12 DLPFC samples with layers",
+        "LIBD_human_DLPFC": "Human brain reference",
+        "10x_mouse_brain": "Standard 10x demo data"
+      },
+      "code_template": "# Evaluation metrics\nfrom scipy.stats import pearsonr\nimport numpy as np\n\ndef evaluate_gene_prediction(pred, true):\n    pccs = [pearsonr(pred[:, i], true[:, i])[0] for i in range(pred.shape[1])]\n    return np.nanmean(pccs)"
+    }
+  },
+
+  "quick_decision_trees": {
+    "choose_encoder": {
+      "question": "What image encoder should we use?",
+      "if_speed_priority": "ResNet50 (fast, proven)",
+      "if_accuracy_priority": "UNI or CONCH (foundation models)",
+      "if_limited_data": "Frozen foundation model + linear probe",
+      "if_custom_domain": "CTransPath or fine-tune"
+    },
+    "choose_loss": {
+      "question": "What loss function for gene prediction?",
+      "if_normalized_data": "MSE + Cosine similarity",
+      "if_count_data": "Poisson NLL or Negative Binomial",
+      "if_sparse_data": "ZINB (zero-inflated)",
+      "if_ranking_matters": "Correlation-based loss"
+    },
+    "choose_spatial_encoder": {
+      "question": "How to encode spatial relationships?",
+      "if_explicit_graph": "GNN (GAT, GraphSAGE)",
+      "if_with_transformer": "Positional encoding (sin/cos or learnable)",
+      "if_local_context": "Spatial attention windows",
+      "if_simple_baseline": "Concatenate coordinates as features"
+    }
+  },
+
+  "emergency_fixes": {
+    "model_not_learning": [
+      "Check learning rate (try 1e-4, 1e-5)",
+      "Check data normalization (log1p for counts)",
+      "Check for NaN in data",
+      "Try smaller batch size",
+      "Verify labels are correct"
+    ],
+    "overfitting": [
+      "Add dropout (0.1-0.5)",
+      "More augmentation",
+      "Reduce model capacity",
+      "Early stopping",
+      "Weight decay (1e-4)"
+    ],
+    "out_of_memory": [
+      "Reduce batch size",
+      "Use gradient checkpointing",
+      "Mixed precision (torch.cuda.amp)",
+      "Smaller image patches",
+      "Gradient accumulation"
+    ],
+    "slow_training": [
+      "Use mixed precision",
+      "Increase batch size (if memory allows)",
+      "Reduce image resolution",
+      "Pre-compute features",
+      "Use faster dataloader (num_workers)"
+    ]
+  }
+}

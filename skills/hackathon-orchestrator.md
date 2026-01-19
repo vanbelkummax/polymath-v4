@@ -27,7 +27,26 @@ python scripts/q.py "your query" -n 20
 python scripts/q.py "your query" --fast    # Skip reranking (~1s)
 python scripts/q.py "your query" --repos   # Search code repos
 python scripts/q.py "your query" --code    # Find code for papers
+
+# Use case lookup (INSTANT)
+python scripts/usecase.py                   # List all use cases
+python scripts/usecase.py gene              # Gene expression prediction
+python scripts/usecase.py multimodal        # Multimodal integration
+python scripts/usecase.py --decisions       # Quick decision trees
+python scripts/usecase.py --emergency       # Emergency fixes
 ```
+
+## PRE-MADE USE CASES
+
+| Use Case | Likelihood | Command |
+|----------|------------|---------|
+| Gene expression prediction | 🔴 HIGH | `usecase.py gene` |
+| Multimodal integration | 🔴 HIGH | `usecase.py multimodal` |
+| Benchmark evaluation | 🔴 HIGH | `usecase.py benchmark` |
+| Spatial domain ID | 🟡 MED | `usecase.py spatial` |
+| Foundation model tuning | 🟡 MED | `usecase.py foundation` |
+| Cell type deconvolution | 🟡 MED | `usecase.py deconv` |
+| Cell segmentation | 🟢 LOW | `usecase.py segment` |
 
 ---
 
