@@ -3,11 +3,15 @@
 > **A Postgres-first knowledge system for scientific papers, code repositories, and cross-domain insights.**
 
 <p align="center">
-  <img src="docs/images/architecture.png" alt="Polymath v4 Architecture" width="800">
+  <img src="docs/polymath-overview.png" alt="Polymath System Overview" width="900">
 </p>
 
 <p align="center">
-  <em>Document → Process → Store → Search: The Polymath pipeline transforms scientific papers into a searchable knowledge graph.</em>
+  <b>A. Research & Discovery</b> • <b>B. Coding & Development</b> • <b>C. Cross-Domain Knowledge Transfer</b>
+</p>
+
+<p align="center">
+  <em>Polymath aggregates research, generates context-aware code, and facilitates polymathic hypothesis generation.</em>
 </p>
 
 ## Overview
@@ -19,15 +23,16 @@ Polymath v4 is a **polymathic knowledge system** designed to:
 3. **Enable semantic search** using BGE-M3 embeddings stored in PostgreSQL pgvector
 4. **Build cross-domain connections** via concept extraction and Neo4j graph
 
-### Key Statistics (2026-01-18)
+### Key Statistics (2026-01-19)
 
 | Metric | Count |
 |--------|-------|
-| Documents | 1,698 |
-| Paper Passages | 143,103 |
-| Repositories | 1,791 |
-| Repo Passages | 51,006 |
-| Paper-Repo Links | 423 |
+| Documents | 2,183+ |
+| Paper Passages | 170,000+ |
+| Repositories | 1,865 |
+| Algorithms | 26,592 |
+| Polymathic Bridges | 36 |
+| Concepts | 5M+ |
 
 ---
 
