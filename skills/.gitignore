@@ -1,0 +1,21 @@
+# External skill symlinks (clone claude-scientific-skills repo to get these)
+anndata
+citation-management
+exploratory-data-analysis
+geo-database
+histolab
+hypothesis-generation
+latex-posters
+literature-review
+openalex-database
+pathml
+peer-review
+pubmed-database
+research-grants
+scanpy
+scientific-brainstorming
+scientific-schematics
+scientific-visualization
+scientific-writing
+statistical-analysis
+venue-templates
