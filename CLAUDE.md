@@ -245,10 +245,10 @@ psql -U polymath -d polymath -f schema/008_performance_indexes.sql
 
 | Metric | Count |
 |--------|-------|
-| Documents | 1,701 |
-| Passages | 143,103 |
-| Concepts | 4,829,145 |
-| Repositories | 1,791 |
+| Documents | 1,778 |
+| Passages | 148,208 |
+| Concepts | 4,829,145 (batch job running for new passages) |
+| Repositories | 1,800 |
 
 ---
 

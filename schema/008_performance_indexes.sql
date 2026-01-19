@@ -7,12 +7,14 @@ CREATE INDEX IF NOT EXISTS idx_passages_active
     ON passages(doc_id)
     WHERE is_superseded = FALSE;
 
--- Covering index for passage search with embedding
--- Optimizes vector search with is_superseded filter
-CREATE INDEX IF NOT EXISTS idx_passages_active_embedding
-    ON passages USING ivfflat (embedding vector_cosine_ops)
-    WITH (lists = 100)
-    WHERE is_superseded = FALSE AND embedding IS NOT NULL;
+-- Vector search index using HNSW (more accurate than IVFFlat)
+-- HNSW provides better recall than IVFFlat for approximate nearest neighbor search
+-- m=16: connections per node, ef_construction=200: build-time quality
+-- NOTE: Do NOT use partial indexes with HNSW - they cause incorrect results
+-- when the query planner chooses the index over sequential scan
+CREATE INDEX IF NOT EXISTS idx_passages_embedding_hnsw
+    ON passages USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 200);
 
 -- Index for recent documents (useful for dashboard queries)
 CREATE INDEX IF NOT EXISTS idx_documents_created_at
