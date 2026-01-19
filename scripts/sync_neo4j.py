@@ -25,7 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from lib.config import config
-from lib.db.postgres import get_pg_pool
+from lib.db.postgres import get_pool
 from lib.db.neo4j import get_neo4j_driver
 
 logging.basicConfig(
@@ -47,7 +47,7 @@ def prune_superseded(driver):
     """
     logger.info("Pruning superseded passages from graph...")
 
-    pool = get_pg_pool()
+    pool = get_pool()
 
     # 1. Get IDs of superseded passages from Postgres
     with pool.connection() as conn:
@@ -95,7 +95,7 @@ def sync_papers(driver, incremental: bool = False):
     """Sync documents to Paper nodes."""
     logger.info("Syncing Paper nodes...")
 
-    pool = get_pg_pool()
+    pool = get_pool()
 
     with pool.connection() as conn:
         with conn.cursor() as cur:
@@ -175,7 +175,7 @@ def sync_passages(driver, incremental: bool = False):
     """Sync passages to Passage nodes (excludes superseded)."""
     logger.info("Syncing Passage nodes...")
 
-    pool = get_pg_pool()
+    pool = get_pool()
 
     with pool.connection() as conn:
         with conn.cursor() as cur:
@@ -230,7 +230,7 @@ def sync_concepts(driver):
     """Sync concepts to typed nodes (METHOD, PROBLEM, etc.)."""
     logger.info("Syncing Concept nodes...")
 
-    pool = get_pg_pool()
+    pool = get_pool()
 
     # Get distinct concepts by type
     concept_types = ["method", "problem", "domain", "dataset", "metric", "entity"]
@@ -275,7 +275,7 @@ def sync_mentions(driver):
     """Create MENTIONS relationships between passages and concepts."""
     logger.info("Syncing MENTIONS relationships...")
 
-    pool = get_pg_pool()
+    pool = get_pool()
 
     with pool.connection() as conn:
         with conn.cursor() as cur:
