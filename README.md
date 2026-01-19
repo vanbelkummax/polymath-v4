@@ -2,6 +2,12 @@
 
 > **An evolving applied knowledge-skills hub for spatial multimodal data analysis—bridging theory, code, and actionable skills across domains.**
 
+![Polymath v4 Architecture](docs/images/architecture.png)
+
+*Figure 1: The Polymath v4 architecture integrates unstructured scientific texts and structured codebases through a hybrid vector-graph engine. This enables novel applications including seamless navigation between theory and implementation ('Vibe Coding'), automated knowledge synthesis, and personalized concept mastery.*
+
+---
+
 ## Status: Production Ready
 
 **Last Audit:** 2026-01-19 | **Auditor:** Claude Opus 4.5 | **Result:** ✅ PASS
