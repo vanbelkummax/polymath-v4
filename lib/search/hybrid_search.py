@@ -3,12 +3,17 @@ Hybrid Search for Polymath v4
 
 Combines vector similarity with BM25 for optimal retrieval.
 Includes GraphRAG query expansion via Neo4j concept graph.
+Features: query caching, MMR diversity, search analytics.
 """
 
 import logging
 import re
+import time
+import hashlib
+from functools import lru_cache
 from typing import List, Dict, Optional, Tuple, Set
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from collections import deque
 
 import numpy as np
 
@@ -20,6 +25,63 @@ logger = logging.getLogger(__name__)
 
 # Neo4j connection (lazy loaded)
 _neo4j_driver = None
+
+# Query embedding cache (LRU with max 1000 queries)
+_embedding_cache: Dict[str, np.ndarray] = {}
+_cache_order: deque = deque(maxlen=1000)
+CACHE_MAX_SIZE = 1000
+
+# Search analytics (ring buffer of recent queries)
+_search_log: deque = deque(maxlen=1000)
+
+
+def get_cached_embedding(query: str, embedder: 'BGEEmbedder') -> np.ndarray:
+    """Get query embedding from cache or compute it."""
+    cache_key = hashlib.md5(query.encode()).hexdigest()
+
+    if cache_key in _embedding_cache:
+        logger.debug(f"Cache hit for query: {query[:30]}...")
+        return _embedding_cache[cache_key]
+
+    # Compute embedding
+    embedding = embedder.embed_single(query)
+
+    # Add to cache with LRU eviction
+    if len(_embedding_cache) >= CACHE_MAX_SIZE:
+        # Remove oldest
+        if _cache_order:
+            oldest = _cache_order.popleft()
+            _embedding_cache.pop(oldest, None)
+
+    _embedding_cache[cache_key] = embedding
+    _cache_order.append(cache_key)
+
+    return embedding
+
+
+def log_search(query: str, mode: str, n_results: int, latency_ms: float):
+    """Log search for analytics."""
+    _search_log.append({
+        'query': query[:100],
+        'mode': mode,
+        'n_results': n_results,
+        'latency_ms': latency_ms,
+        'timestamp': time.time()
+    })
+
+
+def get_search_stats() -> Dict:
+    """Get search analytics summary."""
+    if not _search_log:
+        return {'total_queries': 0}
+
+    latencies = [s['latency_ms'] for s in _search_log]
+    return {
+        'total_queries': len(_search_log),
+        'avg_latency_ms': sum(latencies) / len(latencies),
+        'p95_latency_ms': sorted(latencies)[int(len(latencies) * 0.95)] if len(latencies) > 20 else max(latencies),
+        'cache_size': len(_embedding_cache),
+    }
 
 
 def _get_neo4j_driver():
@@ -193,9 +255,11 @@ class HybridSearcher:
         n: int = 20,
         conn=None
     ) -> List[SearchResult]:
-        """Pure vector similarity search."""
+        """Pure vector similarity search with caching."""
+        start_time = time.time()
+
         embedder = self._get_embedder()
-        query_embedding = embedder.embed_single(query)
+        query_embedding = get_cached_embedding(query, embedder)
 
         should_close = conn is None
         if conn is None:
@@ -233,6 +297,9 @@ class HybridSearcher:
 
         if should_close:
             conn.close()
+
+        # Log search analytics
+        log_search(query, 'vector', len(results), (time.time() - start_time) * 1000)
 
         return results
 
@@ -289,6 +356,7 @@ class HybridSearcher:
         vector_weight: float = None,
         rerank: bool = None,
         graph_expand: bool = False,
+        diversify: bool = False,
         conn=None
     ) -> List[SearchResult]:
         """
@@ -300,7 +368,10 @@ class HybridSearcher:
             vector_weight: Weight for vector scores (0-1), default from config
             rerank: Whether to rerank results (default: self.rerank_enabled)
             graph_expand: Whether to use GraphRAG query expansion via Neo4j
+            diversify: Apply MMR to reduce redundancy from same documents
         """
+        start_time = time.time()
+
         # Use config defaults
         if vector_weight is None:
             vector_weight = config.SEARCH_VECTOR_WEIGHT
@@ -363,10 +434,62 @@ class HybridSearcher:
         else:
             results = results[:n]
 
+        # Apply MMR diversification if requested
+        if diversify and len(results) > 1:
+            results = self._mmr_diversify(results, n)
+
         if should_close:
             conn.close()
 
+        # Log search analytics
+        log_search(query, 'hybrid', len(results), (time.time() - start_time) * 1000)
+
         return results
+
+    def _mmr_diversify(
+        self,
+        results: List[SearchResult],
+        n: int,
+        lambda_param: float = 0.7
+    ) -> List[SearchResult]:
+        """
+        Apply Maximum Marginal Relevance for result diversity.
+
+        Reduces redundancy by penalizing results from same documents.
+
+        Args:
+            results: Initial ranked results
+            n: Number to return
+            lambda_param: Balance relevance vs diversity (0=diversity, 1=relevance)
+        """
+        if len(results) <= 1:
+            return results
+
+        selected = [results[0]]
+        remaining = results[1:]
+        doc_ids_seen = {results[0].doc_id}
+
+        while len(selected) < n and remaining:
+            best_idx = 0
+            best_score = -float('inf')
+
+            for i, r in enumerate(remaining):
+                relevance = r.score
+
+                # Penalize if from same document as already selected
+                diversity_penalty = 0.3 if r.doc_id in doc_ids_seen else 0.0
+
+                mmr_score = lambda_param * relevance - (1 - lambda_param) * diversity_penalty
+
+                if mmr_score > best_score:
+                    best_score = mmr_score
+                    best_idx = i
+
+            selected.append(remaining[best_idx])
+            doc_ids_seen.add(remaining[best_idx].doc_id)
+            remaining.pop(best_idx)
+
+        return selected
 
     def _rerank(
         self,
