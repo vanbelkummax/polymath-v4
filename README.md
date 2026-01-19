@@ -35,8 +35,20 @@ This isn't just a paper database. It's:
 | **Concepts** | 7.36M | ✅ |
 | **Repositories** | 1,881 | ✅ |
 | **Code Chunks** | 578,830 | ✅ |
-| **Neo4j Nodes** | 1.1M+ | ✅ |
-| **Neo4j Edges** | 2.7M+ | ✅ |
+| **Neo4j Nodes** | 930K+ | ✅ |
+| **Neo4j Edges** | 2.5M+ | ✅ |
+
+### Knowledge Structure
+
+<p align="center">
+  <img src="docs/images/concept_distribution.png" width="45%" alt="Concept Distribution"/>
+  <img src="docs/images/concept_types_neo4j.png" width="45%" alt="Concept Types"/>
+</p>
+
+<p align="center">
+  <img src="docs/images/system_scale.png" width="45%" alt="System Scale"/>
+  <img src="docs/images/knowledge_graph_schema.png" width="45%" alt="Graph Schema"/>
+</p>
 
 ---
 
