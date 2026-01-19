@@ -59,28 +59,61 @@ def main():
             print()
 
     elif args.code:
-        # Find code for papers matching query
+        # Find code for papers matching query via semantic search + repo links
+        from lib.search.hybrid_search import HybridSearcher
         from lib.db.postgres import get_pool
+
+        # First: semantic search for relevant papers
+        searcher = HybridSearcher(rerank=not args.fast)
+        paper_results = searcher.hybrid_search(query, n=args.n * 3)
+
+        # Get unique doc_ids from search results
+        doc_ids = list(set(r.doc_id for r in paper_results if hasattr(r, 'doc_id')))
+
+        if not doc_ids:
+            print(f"\n=== Code for papers matching '{query}' ===\n")
+            print("No matching papers found.")
+            return
+
+        # Second: find repos linked to these papers
         pool = get_pool()
         with pool.connection() as conn:
             with conn.cursor() as cur:
+                # Try paper_repo_links first (has repo_id FK)
                 cur.execute("""
-                    SELECT d.title, d.year, r.name, r.stars, r.repo_url
+                    SELECT DISTINCT d.title, d.year, r.name, r.stars, r.repo_url, r.description
                     FROM documents d
-                    JOIN paper_repos pr ON d.doc_id = pr.doc_id
-                    JOIN repositories r ON LOWER(pr.repo_url) = LOWER(r.repo_url)
-                    WHERE d.title ILIKE %s
+                    JOIN paper_repo_links prl ON d.doc_id = prl.doc_id
+                    JOIN repositories r ON prl.repo_id = r.repo_id
+                    WHERE d.doc_id = ANY(%s::uuid[])
                     ORDER BY r.stars DESC NULLS LAST
                     LIMIT %s
-                """, (f"%{query}%", args.n))
+                """, (doc_ids, args.n))
                 results = cur.fetchall()
 
+                # Fallback to paper_repos if no results
+                if not results:
+                    cur.execute("""
+                        SELECT DISTINCT d.title, d.year, r.name, r.stars, r.repo_url, r.description
+                        FROM documents d
+                        JOIN paper_repos pr ON d.doc_id = pr.doc_id
+                        JOIN repositories r ON LOWER(pr.repo_url) = LOWER(r.repo_url)
+                        WHERE d.doc_id = ANY(%s::uuid[])
+                        ORDER BY r.stars DESC NULLS LAST
+                        LIMIT %s
+                    """, (doc_ids, args.n))
+                    results = cur.fetchall()
+
         print(f"\n=== Code for papers matching '{query}' ===\n")
-        for title, year, name, stars, url in results:
+        if not results:
+            print("No repos linked to matching papers. Try running asset detection.")
+        for title, year, name, stars, url, desc in results:
             stars_str = f"⭐{stars}" if stars else ""
-            print(f"📄 {title[:60]}... ({year})")
+            print(f"📄 {title[:60]}... ({year or 'n.d.'})")
             print(f"   💻 {name} {stars_str}")
             print(f"   {url}")
+            if desc:
+                print(f"   {desc[:100]}...")
             print()
 
     else:

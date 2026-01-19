@@ -1,9 +1,10 @@
 # Polymath v4 - Claude Code Guide
 
-## Current State: OPERATIONAL
+## Current State: PRODUCTION READY
 
-**Status:** 🟢 Production-ready (ingestion, search, concepts, repos)
-**Last Updated:** 2026-01-18
+**Status:** 🟢 Verified production-ready (2026-01-19 audit)
+**Last Audit:** 2026-01-19
+**Auditor:** Claude Opus 4.5
 
 ---
 
@@ -12,15 +13,32 @@
 ```bash
 cd /home/user/polymath-v4
 
-# 1. Ingest a PDF
-python scripts/ingest_pdf.py /path/to/paper.pdf
+# 1. Search (papers)
+python scripts/q.py "spatial transcriptomics"
 
-# 2. Search
-python -c "from lib.search.hybrid_search import search; print(search('your query', n=5))"
+# 2. Search (code-paper bridge)
+python scripts/q.py "gene expression prediction" --code
 
-# 3. System health
+# 3. Search (repos)
+python scripts/q.py "graph neural network" --repos
+
+# 4. System health
 python scripts/system_report.py --quick
 ```
+
+---
+
+## Current Statistics (2026-01-19)
+
+| Metric | Count | Status |
+|--------|-------|--------|
+| Documents | 2,193 | ✅ |
+| Passages | 174,321 | ✅ 100% embedded |
+| Concepts | 7,362,693 | ✅ |
+| Repositories | 1,881 | ✅ |
+| Code Chunks | 578,830 | ✅ |
+| Paper-Repo Links | 524 | ✅ |
+| Neo4j Nodes | 1.1M+ | ✅ |
 
 ---
 
@@ -29,19 +47,30 @@ python scripts/system_report.py --quick
 ```
 polymath-v4/
 ├── lib/
-│   ├── config.py              # Central config (thread-safe)
-│   ├── db/postgres.py         # Connection pool (thread-safe)
-│   ├── embeddings/bge_m3.py   # BGE-M3 embeddings (thread-safe)
-│   ├── search/hybrid_search.py # Vector + BM25 + reranking
+│   ├── config.py              # Central config (thread-safe) ✅
+│   ├── db/postgres.py         # Connection pool (thread-safe) ✅
+│   ├── embeddings/bge_m3.py   # BGE-M3 embeddings (thread-safe) ✅
+│   ├── search/hybrid_search.py # Vector + BM25 + reranking ✅
+│   ├── unified_ingest.py      # Main ingestion orchestrator ✅
 │   └── ingest/
 │       ├── pdf_parser.py      # PyMuPDF text extraction
 │       ├── chunking.py        # Header-aware chunking
-│       └── asset_detector.py  # GitHub/HF/citation detection
-├── scripts/                   # CLI tools
-├── schema/                    # PostgreSQL migrations (001-008)
+│       └── asset_detector.py  # GitHub/HF/citation detection ✅
+├── scripts/                   # CLI tools (28 scripts)
+├── schema/                    # PostgreSQL migrations (001-009)
+├── skills/                    # Operational skills
 ├── dashboard/                 # Streamlit UI
 └── tests/                     # 26 tests
 ```
+
+---
+
+## Services
+
+| Service | Status | Connection |
+|---------|--------|------------|
+| PostgreSQL | ✅ Running | `psql -U polymath -d polymath` |
+| Neo4j | ✅ Running | `bolt://localhost:7687` |
 
 ---
 
@@ -61,10 +90,16 @@ GCP_PROJECT=fifth-branch-483806-m1
 GCS_BUCKET=polymath-batch-jobs
 ```
 
+### Connection Pool Settings (lib/config.py)
+
+```python
+PG_POOL_MIN = 2   # Minimum connections
+PG_POOL_MAX = 10  # Maximum connections
+```
+
 ### Search Tuning (Optional)
 
 ```bash
-# These can be set in .env or as environment variables
 SEARCH_VECTOR_WEIGHT=0.7        # 0-1, higher = more semantic
 SEARCH_CANDIDATE_MULTIPLIER=3   # Candidates = n * multiplier
 SEARCH_RRF_K=60                 # RRF fusion constant
@@ -76,105 +111,99 @@ SEARCH_GRAPHRAG_MIN_COOCCURRENCE=3
 
 ## Key Commands
 
+### Search
+
+```bash
+# Paper search (semantic)
+python scripts/q.py "spatial transcriptomics"
+
+# Code-Paper Bridge (find repos for papers)
+python scripts/q.py "gene expression from H&E" --code
+
+# Repo search (find code mentioning topic)
+python scripts/q.py "transformer" --repos
+
+# Fast mode (skip reranking)
+python scripts/q.py "query" --fast
+```
+
 ### Ingestion
+
 ```bash
 # Single PDF
 python scripts/ingest_pdf.py paper.pdf
 
 # Batch with parallel workers
 python scripts/ingest_pdf.py /path/to/*.pdf --workers 4
-
-# With Zotero metadata
-python scripts/ingest_pdf.py paper.pdf --zotero-csv metadata.csv
 ```
 
-### Search
-```python
-from lib.search.hybrid_search import warmup, search
+### Concepts (Batch API)
 
-# Fast repeated queries (warmup once at startup)
-searcher = warmup(rerank=True)
-results = searcher.hybrid_search("spatial transcriptomics", n=10)
-
-# With GraphRAG expansion
-results = searcher.hybrid_search("gene expression", graph_expand=True)
-
-# Override default weights
-results = searcher.hybrid_search("query", vector_weight=0.8)
-
-# Quick one-off
-results = search("gene expression prediction", n=5)
-```
-
-### Concepts
 ```bash
 python scripts/batch_concepts.py --submit --limit 100
 python scripts/batch_concepts.py --status
 python scripts/batch_concepts.py --process
 ```
 
-### Discovery
+### Neo4j Sync
+
 ```bash
-# Find papers via CORE API
-python scripts/discover_papers.py "spatial transcriptomics" --auto-ingest
+python scripts/sync_neo4j.py --full
+python scripts/sync_neo4j.py --incremental
+```
 
-# Gap analysis
-python scripts/active_librarian.py --analyze-gaps
+### System Health
+
+```bash
+python scripts/system_report.py --quick
+python scripts/system_report.py  # Full report
 ```
 
 ---
 
-## Database
-
-### Quick Stats
-```sql
-SELECT
-    (SELECT COUNT(*) FROM documents) as docs,
-    (SELECT COUNT(*) FROM passages) as passages,
-    (SELECT COUNT(embedding) FROM passages) as embedded,
-    (SELECT COUNT(*) FROM passage_concepts) as concepts,
-    (SELECT COUNT(*) FROM repositories) as repos;
-```
-
-### Schema (key tables)
-```sql
-documents (doc_id, title, authors, year, doi, pmid, title_hash)
-passages (passage_id, doc_id, passage_text, embedding, is_superseded)
-passage_concepts (passage_id, concept_name, concept_type, confidence)
-repositories (repo_id, url, name, stars, language)
-repo_passages (passage_id, repo_id, passage_text, embedding)
-```
-
-### Performance Indexes
-```sql
--- Partial indexes for active passages (schema/008)
-idx_passages_active              -- Non-superseded passages
-idx_passages_active_embedding    -- Vector search on active only
-idx_documents_created_at         -- Recent docs
-idx_pc_high_confidence           -- High-confidence concepts
-```
-
----
-
-## Thread Safety
+## Thread Safety (Verified 2026-01-19)
 
 All core modules are thread-safe:
 
-| Module | Mechanism |
-|--------|-----------|
-| `db/postgres.py` | Connection pool with `_pool_lock` |
-| `embeddings/bge_m3.py` | `_model_lock` + `_encode_lock` |
-| `search/hybrid_search.py` | Uses pooled connections |
+| Module | Mechanism | Status |
+|--------|-----------|--------|
+| `lib/db/postgres.py` | `_pool_lock` + double-check locking | ✅ Verified |
+| `lib/embeddings/bge_m3.py` | `_model_lock` + `_encode_lock` | ✅ Verified |
+| `lib/unified_ingest.py` | Per-task connections | ✅ Verified |
+| `lib/search/hybrid_search.py` | Uses pooled connections | ✅ Verified |
+
+---
+
+## Database Schema (Key Tables)
+
+```sql
+-- Core
+documents (doc_id, title, authors, year, doi, pmid, title_hash, pdf_path)
+passages (passage_id, doc_id, passage_text, embedding, section, page_num)
+passage_concepts (passage_id, concept_name, concept_type, confidence)
+
+-- Code
+repositories (repo_id, repo_url, owner, name, stars, language)
+repo_passages (passage_id, repo_id, passage_text, embedding)
+code_chunks (chunk_id, file_id, chunk_type, name, content)
+
+-- Links
+paper_repo_links (doc_id, repo_id, link_type, confidence)
+paper_repos (doc_id, repo_url, detection_method, confidence)
+
+-- Skills
+paper_skills (skill_id, skill_name, skill_type, description, evidence_count, status)
+```
 
 ---
 
 ## AI Models
 
-| Component | Model | Notes |
-|-----------|-------|-------|
-| Embeddings | BGE-M3 | 1024-dim, local GPU |
-| Concepts | gemini-2.5-flash-lite | Batch API (50% cheaper) |
-| Reranking | bge-reranker-v2-m3 | Optional cross-encoder |
+| Component | Model | Location | Notes |
+|-----------|-------|----------|-------|
+| Embeddings | BGE-M3 | Local GPU | 1024-dim, $0 |
+| Concepts | Gemini 2.5 Flash Lite | Batch API | 50% cheaper |
+| Reranking | bge-reranker-v2-m3 | Local GPU | Optional |
 
 ---
 
@@ -199,14 +228,21 @@ All core modules are thread-safe:
 python -m pytest tests/ -v
 
 # Quick import check
-python -c "from lib.config import config; print('✓')"
-python -c "from lib.db.postgres import check_health; print(check_health())"
-python -c "from lib.search.hybrid_search import HybridSearcher; print('✓')"
+python -c "from lib.config import config; print(f'Pool: {config.PG_POOL_MIN}-{config.PG_POOL_MAX}')"
+python -c "from lib.embeddings.bge_m3 import BGEEmbedder, BGEM3Embedder, Embedder; print('Aliases OK')"
+python -c "from lib.db.postgres import get_connection, get_pool; print('DB OK')"
+python -c "from lib.search.hybrid_search import HybridSearcher; print('Search OK')"
 ```
 
 ---
 
 ## Troubleshooting
+
+### Neo4j not running
+```bash
+docker restart polymax-neo4j
+sleep 20  # Wait for startup
+```
 
 ### Search returns nothing
 ```bash
@@ -219,11 +255,8 @@ from lib.search.hybrid_search import warmup
 searcher = warmup()  # Call once at startup
 ```
 
-### Connection issues
-```python
-from lib.db.postgres import check_health
-print(check_health())  # Should show status: healthy
-```
+### Connection pool exhausted
+Check `PG_POOL_MAX` in `lib/config.py` and increase if needed.
 
 ---
 
@@ -234,21 +267,23 @@ Run in order if setting up fresh:
 psql -U polymath -d polymath -f schema/001_core.sql
 psql -U polymath -d polymath -f schema/002_concepts.sql
 psql -U polymath -d polymath -f schema/003_code.sql
+psql -U polymath -d polymath -f schema/004_skills.sql
 psql -U polymath -d polymath -f schema/006_advanced.sql
 psql -U polymath -d polymath -f schema/007_repositories.sql
 psql -U polymath -d polymath -f schema/008_performance_indexes.sql
+psql -U polymath -d polymath -f schema/009_algorithm_registry.sql
+psql -U polymath -d polymath -f schema/010_stabilization_fixes.sql
 ```
 
 ---
 
-## Current Stats (2026-01-18)
+## Audit History
 
-| Metric | Count |
-|--------|-------|
-| Documents | 1,778 |
-| Passages | 148,208 |
-| Concepts | 4,829,145 (batch job running for new passages) |
-| Repositories | 1,800 |
+| Date | Auditor | Status | Notes |
+|------|---------|--------|-------|
+| 2026-01-19 | Claude Opus 4.5 | ✅ PASS | Full stabilization audit |
+
+See `docs/audits/STABILIZATION_AUDIT_2026_01_19.md` for details.
 
 ---
 
@@ -257,6 +292,7 @@ psql -U polymath -d polymath -f schema/008_performance_indexes.sql
 | Resource | Location |
 |----------|----------|
 | Main config | `lib/config.py` |
-| Search tuning | Environment variables |
+| System architecture | `ARCHITECTURE.md` |
+| Stabilization audit | `docs/audits/STABILIZATION_AUDIT_2026_01_19.md` |
 | Skills | `skills/` directory |
 | Dashboard | `streamlit run dashboard/app.py` |
