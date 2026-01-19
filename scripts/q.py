@@ -94,7 +94,7 @@ def main():
             title = r.title[:70] if len(r.title) > 70 else r.title
             year = getattr(r, 'year', 'n.d.')
             print(f"{i}. {title}... ({year})")
-            print(f"   {r.text[:150]}...")
+            print(f"   {r.passage_text[:150]}...")
             print()
 
 
