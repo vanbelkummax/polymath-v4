@@ -1,0 +1,158 @@
+{
+  "meta": {
+    "created": "2026-01-19",
+    "purpose": "Pre-computed patterns for spatial multimodal hackathon",
+    "usage": "Load at hackathon start for instant access"
+  },
+
+  "architectures": {
+    "image_encoders": {
+      "resnet50": {
+        "pros": ["Fast", "Well-understood", "Pre-trained on ImageNet"],
+        "cons": ["Not histology-specific"],
+        "code": "from torchvision.models import resnet50; encoder = resnet50(pretrained=True)",
+        "papers": ["Deep learning in histopathology", "ResNet for medical imaging"]
+      },
+      "vit": {
+        "pros": ["Global attention", "State-of-the-art"],
+        "cons": ["Needs more data", "Slower"],
+        "code": "from transformers import ViTModel; encoder = ViTModel.from_pretrained('google/vit-base-patch16-224')",
+        "papers": ["ViT for pathology", "Vision Transformer"]
+      },
+      "uni": {
+        "pros": ["Pathology-specific foundation model", "Best performance"],
+        "cons": ["Large model", "May need HuggingFace auth"],
+        "code": "# See mahmoodlab/UNI on HuggingFace",
+        "papers": ["UNI foundation model", "CONCH multimodal"]
+      },
+      "ctranspath": {
+        "pros": ["Histology-specific", "Good features"],
+        "cons": ["Smaller training set than UNI"],
+        "code": "# See Xiyue-Wang/TransPath",
+        "papers": ["CTransPath", "Self-supervised histology"]
+      }
+    },
+
+    "spatial_encoders": {
+      "gnn": {
+        "pros": ["Models cell neighborhoods", "Explicit graph structure"],
+        "cons": ["Graph construction matters", "Can be slow"],
+        "code": "import torch_geometric; from torch_geometric.nn import GATConv",
+        "papers": ["GNN for spatial transcriptomics", "Cell graph neural networks"]
+      },
+      "positional_encoding": {
+        "pros": ["Simple", "Works with transformers"],
+        "cons": ["Doesn't model topology"],
+        "code": "pos_enc = torch.cat([torch.sin(coords), torch.cos(coords)], dim=-1)",
+        "papers": ["Positional encoding in vision", "Spatial coordinate networks"]
+      },
+      "spatial_attention": {
+        "pros": ["Learnable spatial context", "Flexible"],
+        "cons": ["More parameters"],
+        "code": "# Multi-head attention with spatial queries",
+        "papers": ["Spatial attention mechanisms", "Local-global attention"]
+      }
+    },
+
+    "fusion_methods": {
+      "concatenation": {
+        "pros": ["Simple baseline", "Fast"],
+        "cons": ["No interaction modeling"],
+        "code": "fused = torch.cat([img_feat, spatial_feat], dim=-1)"
+      },
+      "cross_attention": {
+        "pros": ["Models interactions", "Powerful"],
+        "cons": ["More compute"],
+        "code": "# Q from modality A, K/V from modality B"
+      },
+      "contrastive": {
+        "pros": ["Learns aligned representations", "Works with unpaired data"],
+        "cons": ["Need negative sampling"],
+        "code": "# CLIP-style InfoNCE loss",
+        "papers": ["CLIP", "Contrastive multimodal learning"]
+      },
+      "optimal_transport": {
+        "pros": ["Principled alignment", "Handles distributions"],
+        "cons": ["Compute intensive"],
+        "code": "import ot; coupling = ot.emd(a, b, cost_matrix)",
+        "papers": ["Optimal transport for biology", "Tangram", "PASTE"]
+      }
+    }
+  },
+
+  "loss_functions": {
+    "gene_expression": {
+      "mse": "nn.MSELoss() - Simple, works for normalized data",
+      "poisson": "nn.PoissonNLLLoss() - For count data",
+      "negative_binomial": "Custom NB loss - Handles overdispersion",
+      "zinb": "Zero-inflated NB - For sparse expression",
+      "cosine": "1 - F.cosine_similarity() - For relative patterns"
+    },
+    "combined": "loss = mse_loss + lambda * cosine_loss"
+  },
+
+  "data_augmentation": {
+    "histology": [
+      "Random rotation (0, 90, 180, 270)",
+      "Random flip (horizontal, vertical)",
+      "Color jitter (brightness, contrast, saturation)",
+      "Stain normalization (Macenko, Vahadane)",
+      "Random crop + resize",
+      "Gaussian blur (light)"
+    ],
+    "spatial": [
+      "Random rotation of coordinates",
+      "Random translation",
+      "Coordinate noise injection",
+      "Subsampling spots"
+    ]
+  },
+
+  "training_tips": {
+    "batch_size": "Start with 32, increase if GPU allows",
+    "learning_rate": "1e-4 for Adam, use cosine schedule",
+    "epochs": "50-100 for from-scratch, 20-30 for fine-tuning",
+    "mixed_precision": "torch.cuda.amp for 2x speed",
+    "gradient_clipping": "clip_grad_norm_(model.parameters(), 1.0)"
+  },
+
+  "baselines_to_beat": {
+    "histogene": {"year": 2022, "repo": "maxpmx/HisToGene"},
+    "st_net": {"year": 2020, "repo": "bryanhe/ST-Net"},
+    "img2st": {"year": 2024, "notes": "Multimodal baseline"},
+    "hest": {"year": 2024, "repo": "mahmoodlab/HEST", "notes": "Benchmark dataset"},
+    "tangram": {"year": 2021, "repo": "broadinstitute/Tangram", "notes": "Spatial mapping"}
+  },
+
+  "polymathic_tricks": {
+    "from_nlp": {
+      "attention_pooling": "Use [CLS] token or mean pooling from transformer",
+      "prompt_tuning": "Learnable prompts for few-shot adaptation",
+      "retrieval_augmented": "Retrieve similar cases to augment prediction"
+    },
+    "from_physics": {
+      "diffusion": "Model spatial smoothing as heat diffusion",
+      "energy_based": "Cell interactions as energy minimization",
+      "message_passing": "Belief propagation for spatial inference"
+    },
+    "from_math": {
+      "optimal_transport": "Align distributions across modalities",
+      "persistent_homology": "Capture tissue topology features",
+      "manifold_learning": "Learn latent structure preserving geometry"
+    },
+    "from_cv": {
+      "superpixels": "SLIC for efficient region processing",
+      "feature_pyramid": "Multi-scale feature extraction",
+      "deformable_attention": "Adaptive spatial attention"
+    }
+  },
+
+  "quick_wins": [
+    "Use pretrained pathology encoder (UNI/CONCH) instead of ImageNet",
+    "Add coordinate positional encoding to features",
+    "Use cosine similarity loss alongside MSE",
+    "Ensemble predictions from multiple scales",
+    "Use top-k gene prediction (don't predict all 20k)",
+    "Normalize gene expression (log1p + standardize)"
+  ]
+}
